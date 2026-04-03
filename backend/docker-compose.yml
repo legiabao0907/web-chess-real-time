@@ -1,15 +1,16 @@
 services:
-  mongodb:
-    image: mongo:5.0.15
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: 123456
+  postgres:
+    image: postgres:17.4
+    container_name: testnest
+    restart: unless-stopped
     ports:
-      - 27017:27017
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: testnest
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
     volumes:
-      - mongodb_data_container:/data/db
+      - postgres_data:/var/lib/postgresql/data
 
 volumes:
-  mongodb_data_container:
-
-    # docker compose -p hoidanit-mongodb-4rn up -d
+  postgres_data:
