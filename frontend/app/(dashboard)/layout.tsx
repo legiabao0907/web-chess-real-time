@@ -1,5 +1,8 @@
-import React from "react";
+"use client";
+
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { 
   Home, 
   Swords, 
@@ -8,15 +11,32 @@ import {
   History, 
   Settings, 
   HelpCircle,
-  Bell
+  Bell,
+  LogOut,
+  User
 } from "lucide-react";
 import "./dashboard.css";
+import { clearTokens, clearCookies, getUser, AuthUser } from "@/lib/auth";
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const router = useRouter();
+  const [user, setUser] = useState<AuthUser | null>(null);
+
+  useEffect(() => {
+    setUser(getUser());
+  }, []);
+
+  const handleLogout = async () => {
+    clearTokens();
+    await clearCookies();
+    router.push("/");
+    router.refresh(); // Refresh to trigger middleware for the new state
+  };
+
   return (
     <div className="dashboard-layout">
       {/* Sidebar */}
@@ -31,7 +51,7 @@ export default function DashboardLayout({
 
           <div className="sidebar-header">
             <p className="sidebar-subtitle">The Sanctuary</p>
-            <p className="sidebar-title">Grandmaster Status</p>
+            <p className="sidebar-title">{user ? user.username.toUpperCase() : "GRANDMASTER"} STATUS</p>
           </div>
 
           <nav className="sidebar-nav">
@@ -77,10 +97,14 @@ export default function DashboardLayout({
             <Settings size={18} />
             <span className="nav-text">SETTINGS</span>
           </Link>
-          <Link href="/support" className="nav-link">
-            <HelpCircle size={18} />
-            <span className="nav-text">SUPPORT</span>
-          </Link>
+          <button 
+            onClick={handleLogout}
+            className="nav-link logout-btn" 
+            style={{ width: '100%', background: 'none', border: 'none', color: '#8b7fa8', cursor: 'pointer', textAlign: 'left' }}
+          >
+            <LogOut size={18} color="#ef4444" />
+            <span className="nav-text" style={{ color: '#ef4444' }}>TERMINATE SESSION</span>
+          </button>
         </div>
       </aside>
 
@@ -96,7 +120,7 @@ export default function DashboardLayout({
           <div className="header-right">
             <div className="elo-badge">
               <span className="elo-label">ELO </span>
-              <span className="elo-value">2840</span>
+              <span className="elo-value">{user?.eloBlitz || 1200}</span>
             </div>
             
             <button className="bell-btn">
@@ -106,7 +130,11 @@ export default function DashboardLayout({
             
             <div className="avatar-container">
               <div className="avatar-inner">
-                <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=Felix`} alt="User" />
+                {user?.avatarUrl ? (
+                  <img src={user.avatarUrl} alt="User" />
+                ) : (
+                  <User size={24} color="#a855f7" />
+                )}
               </div>
             </div>
           </div>
@@ -126,3 +154,4 @@ export default function DashboardLayout({
     </div>
   );
 }
+

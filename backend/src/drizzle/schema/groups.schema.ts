@@ -6,6 +6,7 @@ import {
   PrimaryKey,
   serial,
   text,
+  uuid,
 } from 'drizzle-orm/pg-core';
 import { users } from './users.schema';
 import { table } from 'console';
@@ -20,7 +21,7 @@ export const groups = pgTable('groups', {
 export const usersToGroups = pgTable(
   'usersToGroups',
   {
-    userId: integer('userId').references(() => users.id),
+    userId: uuid('userId').references(() => users.id),
     groupId: integer('groupId').references(() => groups.id),
   },
   (table) => ({

@@ -17,9 +17,9 @@ async function main() {
         const user = await db
           .insert(schema.users)
           .values({
+            username: faker.internet.userName().slice(0, 20),
             email: faker.internet.email(),
-            name: faker.person.firstName() + ' ' + faker.person.lastName(),
-            password: '',
+            passwordHash: '$2b$12$placeholder_hash_for_seeding_only',
           })
           .returning();
         return user[0].id;

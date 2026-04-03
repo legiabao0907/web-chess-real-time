@@ -1,4 +1,4 @@
-import { integer, pgTable, serial, text } from 'drizzle-orm/pg-core';
+import { integer, pgTable, serial, text, uuid } from 'drizzle-orm/pg-core';
 import { users } from './users.schema';
 import { posts } from './posts.schema';
 import { relations } from 'drizzle-orm';
@@ -6,7 +6,7 @@ import { relations } from 'drizzle-orm';
 export const comments = pgTable('comments', {
   id: serial('id').primaryKey(),
   text: text('text').notNull(),
-  authorId: integer('authorId')
+  authorId: uuid('authorId')
     .references(() => users.id)
     .notNull(),
   postId: integer('postId')
@@ -24,3 +24,4 @@ export const commentsRelations = relations(comments, ({ one }) => ({
     references: [posts.id],
   }),
 }));
+

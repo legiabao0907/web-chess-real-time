@@ -1,11 +1,11 @@
-import { integer, jsonb, pgTable, serial, text } from 'drizzle-orm/pg-core';
+import { integer, jsonb, pgTable, serial, text, uuid } from 'drizzle-orm/pg-core';
 import { users } from './users.schema';
 import { relations } from 'drizzle-orm';
 
 export const profileInfo = pgTable('profileInfo', {
   id: serial('id').primaryKey(),
   metadata: jsonb('metadata'),
-  userId: integer('userId')
+  userId: uuid('userId')
     .references(() => users.id)
     .notNull(),
 });
