@@ -28,8 +28,8 @@ export default function ChessBoardV1() {
 
   return (
     <div className="w-[500px] h-[500px] rounded-xl border-[10px] border-purple-900 shadow-2xl shadow-purple-500/40 overflow-hidden">
-      <Chessboard 
-      
+      <Chessboard
+
         position={game.fen()}
         onPieceDrop={onDrop}
         // Custom màu sắc theo phong cách Tím - Hồng Chessly

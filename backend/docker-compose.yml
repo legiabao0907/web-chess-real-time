@@ -11,6 +11,25 @@ services:
       POSTGRES_PASSWORD: admin
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - chess-network
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: chessnest_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --requirepass chessredis2024
+    volumes:
+      - redis_data:/data
+    networks:
+      - chess-network
 
 volumes:
   postgres_data:
+  redis_data:
+
+networks:
+  chess-network:
+    driver: bridge

@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -10,10 +11,14 @@ async function bootstrap() {
     credentials: true,
   });
 
+  // Bật WebSocket adapter (Socket.IO)
+  app.useWebSocketAdapter(new IoAdapter(app));
+
   // Prefix chung cho tất cả routes
   app.setGlobalPrefix('api');
 
   await app.listen(8080);
   console.log('🚀 Backend đang chạy tại http://localhost:8080');
+  console.log('🎮 Chess WebSocket: ws://localhost:8080/chess');
 }
 bootstrap();

@@ -115,6 +115,17 @@
   box-shadow: 0 0 15px rgba(226, 48, 255, 0.1);
 }
 
+.clock.low-time {
+  background-color: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.5);
+  animation: pulse-red 1s infinite;
+}
+
+@keyframes pulse-red {
+  0%, 100% { box-shadow: 0 0 15px rgba(239, 68, 68, 0.2); }
+  50% { box-shadow: 0 0 25px rgba(239, 68, 68, 0.5); }
+}
+
 .clock-label {
   font-size: 9px;
   color: rgba(255, 255, 255, 0.4);
@@ -135,6 +146,10 @@
   line-height: 1;
 }
 
+.clock.low-time .clock-time {
+  color: #ef4444;
+}
+
 /* Board Wrapper to center it and keep aspect ratio */
 .board-wrapper {
   flex: 1;
@@ -144,6 +159,7 @@
   width: 100%;
   max-width: 600px;
   margin: 0 auto;
+  position: relative;
 }
 
 .chessboard-container {
@@ -154,7 +170,6 @@
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-/* CSS trick to add a glowing effect to white pieces by targeting svgs inside the container */
 .chessboard-container [data-piece] {
   transition: transform 0.1s;
 }
@@ -282,7 +297,7 @@
 .eval-fill {
   height: 100%;
   background-color: white;
-  width: 50%; /* Just mock based on eval */
+  width: 50%;
   transition: width 0.3s ease;
 }
 
@@ -327,6 +342,11 @@
 
 .action-btn.primary-action:hover {
   background-color: rgba(226, 48, 255, 0.2);
+}
+
+.action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .chat-row {
@@ -385,4 +405,465 @@
 
 .open-chat-btn:hover {
   text-decoration: underline;
+}
+
+/* ─── MATCHMAKING OVERLAY ──────────────────────────────────────────────────── */
+.matchmaking-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(12px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.matchmaking-panel {
+  background: linear-gradient(135deg, #14141a 0%, #1a1a24 100%);
+  border: 1px solid rgba(226, 48, 255, 0.2);
+  border-radius: 20px;
+  padding: 3rem;
+  max-width: 480px;
+  width: 90%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+  box-shadow: 0 0 60px rgba(226, 48, 255, 0.15);
+  text-align: center;
+}
+
+.matchmaking-logo {
+  font-size: 3rem;
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.matchmaking-title {
+  font-size: 24px;
+  font-weight: 900;
+  background: linear-gradient(135deg, #e230ff, #a855f7);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.time-controls-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.tc-btn {
+  background: #1a1a24;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 0.875rem 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: white;
+}
+
+.tc-btn:hover {
+  border-color: rgba(226, 48, 255, 0.4);
+  background: rgba(226, 48, 255, 0.08);
+  transform: translateY(-2px);
+}
+
+.tc-btn.selected {
+  border-color: #e230ff;
+  background: rgba(226, 48, 255, 0.15);
+  box-shadow: 0 0 20px rgba(226, 48, 255, 0.2);
+}
+
+.tc-name {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.tc-time {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.find-game-btn {
+  width: 100%;
+  padding: 1rem;
+  background: linear-gradient(135deg, #e230ff, #a855f7);
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 0.05em;
+}
+
+.find-game-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(226, 48, 255, 0.4);
+}
+
+.find-game-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* ─── SEARCHING STATE ──────────────────────────────────────────────────────── */
+.searching-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.searching-spinner {
+  width: 64px;
+  height: 64px;
+  border: 3px solid rgba(226, 48, 255, 0.2);
+  border-top-color: #e230ff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.searching-text {
+  font-size: 16px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.cancel-search-btn {
+  padding: 0.625rem 1.5rem;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.cancel-search-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
+}
+
+/* ─── CONNECTION INDICATOR ─────────────────────────────────────────────────── */
+.connection-bar {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #121216;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 0.375rem 0.875rem;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  z-index: 50;
+}
+
+.conn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.conn-dot.connected {
+  background: #22c55e;
+  box-shadow: 0 0 8px #22c55e;
+}
+
+.conn-dot.disconnected {
+  background: #ef4444;
+  animation: pulse-red 1s infinite;
+}
+
+/* ─── GAME OVER OVERLAY ────────────────────────────────────────────────────── */
+.game-over-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  border-radius: 8px;
+}
+
+.game-over-panel {
+  background: #14141a;
+  border: 1px solid rgba(226, 48, 255, 0.3);
+  border-radius: 16px;
+  padding: 2rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 220px;
+}
+
+.game-over-icon {
+  font-size: 3rem;
+}
+
+.game-over-title {
+  font-size: 20px;
+  font-weight: 900;
+  color: white;
+}
+
+.game-over-sub {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.rematch-btn {
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #e230ff, #a855f7);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.rematch-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(226, 48, 255, 0.4);
+}
+
+.new-game-btn {
+  padding: 0.625rem 1.5rem;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.new-game-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
+}
+
+/* ─── DRAW DIALOG ──────────────────────────────────────────────────────────── */
+.draw-dialog {
+  background: #1a1a24;
+  border: 1px solid rgba(250, 204, 21, 0.3);
+  border-radius: 10px;
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.draw-dialog-text {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.draw-dialog-title {
+  font-weight: 700;
+  color: #facc15;
+  font-size: 13px;
+}
+
+.draw-dialog-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.accept-btn {
+  padding: 4px 12px;
+  background: rgba(250, 204, 21, 0.15);
+  border: 1px solid rgba(250, 204, 21, 0.4);
+  border-radius: 6px;
+  color: #facc15;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.accept-btn:hover {
+  background: rgba(250, 204, 21, 0.25);
+}
+
+.decline-btn {
+  padding: 4px 12px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.decline-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
+}
+
+/* ─── CHAT PANEL ───────────────────────────────────────────────────────────── */
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.75rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 80px;
+  max-height: 140px;
+}
+
+.chat-messages::-webkit-scrollbar {
+  width: 4px;
+}
+
+.chat-message {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.chat-msg-user {
+  font-weight: 700;
+  color: #e230ff;
+  margin-right: 4px;
+}
+
+.chat-msg-text {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.chat-input {
+  flex: 1;
+  background: #1a1a24;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  color: white;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.chat-input:focus {
+  border-color: rgba(226, 48, 255, 0.4);
+}
+
+.chat-input::placeholder {
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.chat-send-btn {
+  padding: 0.5rem 0.75rem;
+  background: rgba(226, 48, 255, 0.15);
+  border: 1px solid rgba(226, 48, 255, 0.3);
+  border-radius: 6px;
+  color: #e230ff;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-send-btn:hover {
+  background: rgba(226, 48, 255, 0.25);
+}
+
+/* ─── Toast / Error Messages ───────────────────────────────────────────────── */
+.toast-error {
+  position: fixed;
+  bottom: 4rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #f87171;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  z-index: 200;
+  animation: slideUp 0.2s ease;
+}
+
+/* ─── Console Tabs ─────────────────────────────────────────────────────────── */
+.console-tabs {
+  display: flex;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.console-tab {
+  flex: 1;
+  padding: 0.75rem;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+  border-bottom: 2px solid transparent;
+}
+
+.console-tab:hover {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.console-tab.active {
+  color: #e230ff;
+  border-bottom-color: #e230ff;
 }
