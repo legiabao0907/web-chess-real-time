@@ -1,4 +1,4 @@
-import { integer, jsonb, pgTable, serial, text, uuid } from 'drizzle-orm/pg-core';
+import {  jsonb, pgTable, serial, uuid } from 'drizzle-orm/pg-core';
 import { users } from './users.schema';
 import { relations } from 'drizzle-orm';
 

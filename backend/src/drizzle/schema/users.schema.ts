@@ -1,22 +1,22 @@
-import { pgTable, uuid, varchar, integer, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, integer, timestamp, primaryKey } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
 
 export const users = pgTable('users', {
-  // Primary Key, tự động sinh chuỗi UUID khi có user mới
-  id: uuid('id').defaultRandom().primaryKey(),
-  
-  // Thông tin đăng nhập (Bắt buộc & Duy nhất)
+  id: uuid('id').primaryKey().defaultRandom(),
   username: varchar('username', { length: 255 }).notNull().unique(),
   email: varchar('email', { length: 255 }).notNull().unique(),
-  passwordHash: varchar('password_hash', { length: 255 }).notNull(),
-  
-  // Điểm số ELO (Khởi tạo mặc định là 1200)
-  eloBlitz: integer('elo_blitz').default(1200).notNull(),
-  eloRapid: integer('elo_rapid').default(1200).notNull(),
-  
-  // Avatar có thể null nếu user chưa cập nhật
-  avatarUrl: varchar('avatar_url', { length: 1024 }),
-  
-  // Tự động lấy thời gian hiện tại khi tạo/cập nhật
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  passwordHash: text('password_hash').notNull(),
+  blitzRating: integer('blitz_rating').default(1200),
+  rapidRating: integer('rapid_rating').default(1200),
+  bulletRating: integer('bullet_rating').default(1200),
+  role: varchar('role', { length: 50 }).default('user'),
+  createdAt: timestamp('created_at').defaultNow(),
 });
+
+export const friends = pgTable('friends', {
+  user1Id: uuid('user_id_1').references(() => users.id),
+  user2Id: uuid('user_id_2').references(() => users.id),
+  status: varchar('status', { length: 50 }), // Pending, Accepted
+}, (t) => ({
+  pk: primaryKey({ columns: [t.user1Id, t.user2Id] }),
+}));

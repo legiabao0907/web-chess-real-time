@@ -9,8 +9,6 @@ import { DrizzleModule } from '../drizzle/drizzle.module';
   imports: [
     DrizzleModule,
     PassportModule,
-    // JwtModule được cấu hình động trong AuthService (signAsync với secret riêng)
-    // Nên ở đây chỉ cần register không cần options mặc định
     JwtModule.register({}),
   ],
   providers: [AuthService],

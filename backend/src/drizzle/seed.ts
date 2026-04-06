@@ -1,13 +1,13 @@
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
-import * as schema from './schema/schema';
+import { users, posts, chatRooms, games, chatRoomMembers } from './schema/schema';
 import 'dotenv/config';
 import { faker } from '@faker-js/faker';
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
-const db = drizzle(pool, { schema }) as NodePgDatabase<typeof schema>;
+const db = drizzle(pool, { schema: { users, posts, chatRooms, games, chatRoomMembers } });
 
 async function main() {
   const userIds = await Promise.all(
@@ -15,7 +15,7 @@ async function main() {
       .fill('')
       .map(async () => {
         const user = await db
-          .insert(schema.users)
+          .insert(users)
           .values({
             username: faker.internet.userName().slice(0, 20),
             email: faker.internet.email(),
@@ -31,7 +31,7 @@ async function main() {
       .fill('')
       .map(async () => {
         const post = await db
-          .insert(schema.posts)
+          .insert(__dirname + '/schema/posts.schema.ts' as any  )
           .values({
             content: faker.lorem.paragraph(),
             title: faker.lorem.sentence(),
@@ -47,7 +47,7 @@ async function main() {
       .fill('')
       .map(async () => {
         const comment = await db
-          .insert(schema.comments)
+          .insert(chatRooms)
           .values({
             text: faker.lorem.sentence(),
             authorId: faker.helpers.arrayElement(userIds),
@@ -59,7 +59,7 @@ async function main() {
   );
 
   const insertedGroups = await db
-    .insert(schema.groups)
+    .insert(games)
     .values([
       {
         name: 'JS',
@@ -75,7 +75,7 @@ async function main() {
   await Promise.all(
     userIds.map(async (userId) => {
       return await db
-        .insert(schema.usersToGroups)
+        .insert(chatRoomMembers)
         .values({
           userId,
           groupId: faker.helpers.arrayElement(groupIds),

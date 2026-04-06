@@ -77,8 +77,8 @@ export class AuthService {
         id: users.id,
         username: users.username,
         email: users.email,
-        eloBlitz: users.eloBlitz,
-        eloRapid: users.eloRapid,
+        eloBlitz: users.blitzRating,
+        eloBullet: users.bulletRating,
         createdAt: users.createdAt,
       });
 
@@ -118,9 +118,8 @@ export class AuthService {
         id: user.id,
         username: user.username,
         email: user.email,
-        eloBlitz: user.eloBlitz,
-        eloRapid: user.eloRapid,
-        avatarUrl: user.avatarUrl,
+        eloBlitz: user.blitzRating,
+        eloBullet: user.bulletRating,
         createdAt: user.createdAt,
       },
       ...tokens,
