@@ -85,26 +85,32 @@ export class GameService {
 
     // Check if already in queue for this time control
     const existing = await this.redisClient.lrange(key, 0, -1);
+    let alreadyQueued = false;
     for (const raw of existing) {
       const e = JSON.parse(raw) as MatchmakingEntry;
       if (e.userId === entry.userId) {
-        // Already queued, return null (no opponent found yet)
-        return null;
+        // Already queued. Important: Always remove the old entry before adding the new one
+        // to update socketId and keep user at the end of the queue (or keep position)
+        await this.redisClient.lrem(key, 1, raw);
+        alreadyQueued = true;
+        break;
       }
     }
 
     // Look for an opponent
-    const raw = await this.redisClient.lpop(key);
-    if (raw) {
-      const opponent = JSON.parse(raw) as MatchmakingEntry;
-      if (opponent.userId !== entry.userId) {
-        return opponent; // Found an opponent!
-      }
-      // Same user somehow, re-add and fall through
-      await this.redisClient.rpush(key, raw);
+    if (!alreadyQueued) {
+       const raw = await this.redisClient.lpop(key);
+       if (raw) {
+          const opponent = JSON.parse(raw) as MatchmakingEntry;
+          if (opponent.userId !== entry.userId) {
+             return opponent; // Found an opponent!
+          }
+          // Same user somehow, re-add (though lrange should prevent this)
+          await this.redisClient.rpush(key, raw);
+       }
     }
 
-    // No opponent found, add to queue
+    // No opponent found OR we updated our socketId - add to queue
     await this.redisClient.rpush(key, JSON.stringify(entry));
     await this.redisClient.expire(key, 300); // 5 min TTL for queue entries
     return null;

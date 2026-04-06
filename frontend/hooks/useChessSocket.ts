@@ -23,6 +23,7 @@ export interface GameState {
   moveHistory: string[];
   winner?: "white" | "black" | "draw";
   lastMove?: { from: string; to: string };
+  lastMoveAt?: number;
 }
 
 export interface ChatMessage {
@@ -62,6 +63,7 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
     socket.on("connect", () => {
       setConnected(true);
       console.log("✅ Socket connected:", socket.id);
+      socket.emit("reconnect_check", { userId, username });
     });
 
     socket.on("disconnect", () => {
