@@ -1,6 +1,7 @@
 "use client"; // Bắt buộc phải có dòng này ở đầu file
 
-import { Chessboard } from "react-chessboard";
+import dynamic from "next/dynamic";
+const Chessboard: any = dynamic(() => import("react-chessboard").then((mod: any) => mod.Chessboard), { ssr: false });
 import { useState } from "react";
 import { Chess, Square } from "chess.js";
 
@@ -9,7 +10,7 @@ export default function ChessBoardV1() {
   const [game, setGame] = useState(new Chess());
 
   // Hàm xử lý khi người dùng thả quân cờ
-  function onDrop(sourceSquare: string, targetSquare: string) {
+  function onDrop(sourceSquare: any, targetSquare: any) {
     try {
       const move = game.move({
         from: sourceSquare,
@@ -29,13 +30,11 @@ export default function ChessBoardV1() {
   return (
     <div className="w-[500px] h-[500px] rounded-xl border-[10px] border-purple-900 shadow-2xl shadow-purple-500/40 overflow-hidden">
       <Chessboard
-
         position={game.fen()}
         onPieceDrop={onDrop}
-        // Custom màu sắc theo phong cách Tím - Hồng Chessly
-        customDarkSquareStyle={{ backgroundColor: "#7e22ce" }} // Tím đậm
-        customLightSquareStyle={{ backgroundColor: "#f3e8ff" }} // Tím cực nhạt (gần như trắng)
-        customDropSquareStyle={{ boxShadow: 'inset 0 0 1px 6px rgba(236, 72, 153, 0.75)' }} // Viền Hồng Neon khi thả quân
+        customDarkSquareStyle={{ backgroundColor: "#7e22ce" }}
+        customLightSquareStyle={{ backgroundColor: "#f3e8ff" }}
+        customDropSquareStyle={{ boxShadow: 'inset 0 0 1px 6px rgba(236, 72, 153, 0.75)' }}
         animationDuration={300}
       />
     </div>

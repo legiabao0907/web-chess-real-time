@@ -46,9 +46,48 @@ export class GameGateway
     this.logger.log('🎮 Chess WebSocket Gateway initialized');
   }
 
-  handleConnection(client: Socket) {
+  async handleConnection(client: Socket) {
     this.logger.log(`Client connected: ${client.id}`);
+    
+    // We can't automatically find user games by socketId alone if it's new
+    // but the client can send a request to check by their userId.
     client.emit('connected', { socketId: client.id, message: 'Connected to Chess Gateway' });
+  }
+
+  @SubscribeMessage('reconnect_check')
+  async handleReconnectCheck(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { userId: string; username: string },
+  ) {
+    const { userId, username } = data;
+    if (!userId) return;
+
+    this.connectedClients.set(client.id, { userId, username });
+    
+    const gameId = await this.gameService.getUserCurrentGame(userId);
+    if (gameId) {
+       this.logger.log(`User ${userId} reclaiming active game ${gameId}`);
+       const game = await this.gameService.getGame(gameId);
+       if (game && game.status === 'active') {
+          await client.join(gameId);
+          client.emit('game_state', {
+            gameId: game.id,
+            fen: game.fen,
+            pgn: game.pgn,
+            whiteId: game.whiteId,
+            blackId: game.blackId,
+            whiteUsername: game.whiteUsername,
+            blackUsername: game.blackUsername,
+            status: game.status,
+            timeControl: game.timeControl,
+            whiteTimeMs: game.whiteTimeMs,
+            blackTimeMs: game.blackTimeMs,
+            turn: game.turn,
+            moveHistory: game.moveHistory,
+            lastMoveAt: game.lastMoveAt,
+          });
+       }
+    }
   }
 
   async handleDisconnect(client: Socket) {
@@ -140,32 +179,43 @@ export class GameGateway
       }
 
       // Both clients join the game room
-      client.join(gameId);
+      await client.join(gameId);
 
       // Find opponent's socket and join them to the room
-      const opponentSocket = this.server.sockets.sockets.get(opponent.socketId);
+      const opponentSocketId = opponent.socketId;
+      const opponentSocket = (this.server.sockets as any).get(opponentSocketId);
+      
       if (opponentSocket) {
-        opponentSocket.join(gameId);
-        const opponentInfo = this.connectedClients.get(opponent.socketId);
+        await opponentSocket.join(gameId);
+        const opponentInfo = this.connectedClients.get(opponentSocketId);
         if (opponentInfo) {
           opponentInfo.gameId = gameId;
           opponentInfo.timeControl = undefined;
         }
+      } else {
+        this.logger.warn(`Opponent socket ${opponentSocketId} not found in this instance`);
       }
 
-      // Emit game_start to both
-      this.server.to(gameId).emit('game_start', {
-        gameId,
+      // Prepare GameState for emitting (matching frontend interface)
+      const gameStartData = {
+        gameId: gameState.id,
         fen: gameState.fen,
+        pgn: gameState.pgn,
         whiteId: gameState.whiteId,
         blackId: gameState.blackId,
         whiteUsername: gameState.whiteUsername,
         blackUsername: gameState.blackUsername,
+        status: gameState.status,
         timeControl: gameState.timeControl,
         whiteTimeMs: gameState.whiteTimeMs,
         blackTimeMs: gameState.blackTimeMs,
         turn: gameState.turn,
-      });
+        moveHistory: gameState.moveHistory,
+        lastMoveAt: gameState.lastMoveAt,
+      };
+
+      // Emit game_start to both
+      this.server.to(gameId).emit('game_start', gameStartData);
 
       this.logger.log(
         `Game ${gameId} started: ${white.username}(W) vs ${black.username}(B)`,
@@ -226,6 +276,7 @@ export class GameGateway
       turn: game.turn,
       moveHistory: game.moveHistory,
       winner: game.winner,
+      lastMoveAt: game.lastMoveAt,
     });
 
     this.logger.log(`User ${username} rejoined game ${gameId}`);
@@ -264,6 +315,7 @@ export class GameGateway
       status: game.status,
       winner: game.winner ?? null,
       lastMove: move,
+      lastMoveAt: game.lastMoveAt,
     };
 
     this.server.to(gameId).emit('move_made', moveUpdate);
