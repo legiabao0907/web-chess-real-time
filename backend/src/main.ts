@@ -17,8 +17,9 @@ async function bootstrap() {
   // Prefix chung cho tất cả routes
   app.setGlobalPrefix('api');
 
-  await app.listen(8080);
-  console.log('🚀 Backend đang chạy tại http://localhost:8080');
+  const port = process.env.PORT || 8080;
+  await app.listen(port);
+  console.log(`🚀 Backend đang chạy tại port ${port}`);
   console.log('🎮 Chess WebSocket: ws://localhost:8080/chess');
 }
 bootstrap();

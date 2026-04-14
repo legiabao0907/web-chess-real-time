@@ -255,6 +255,22 @@
   cursor: pointer;
 }
 
+.avatar-btn {
+  background: linear-gradient(to top right, #cb6ce6, #60a5fa);
+  border: none;
+  padding: 2px;
+  transition: box-shadow 0.25s, transform 0.2s;
+}
+
+.avatar-btn:hover {
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.4), 0 0 18px rgba(226, 48, 255, 0.3);
+  transform: scale(1.08);
+}
+
+.avatar-btn:active {
+  transform: scale(0.96);
+}
+
 .avatar-inner {
   width: 100%;
   height: 100%;

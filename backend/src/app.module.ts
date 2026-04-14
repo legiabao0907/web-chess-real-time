@@ -7,6 +7,8 @@ import { DrizzleModule } from './drizzle/drizzle.module';
 import { AuthModule } from './auth/auth.module';
 import { RedisModule } from './redis/redis.module';
 import { GameModule } from './game/game.module';
+import { LeaderboardModule } from './leaderboard/leaderboard.module';
+import { UserModule } from './user/user.module';
 
 @Module({
   imports: [
@@ -15,6 +17,8 @@ import { GameModule } from './game/game.module';
     AuthModule,
     RedisModule,
     GameModule,
+    LeaderboardModule,
+    UserModule,
   ],
   controllers: [AppController],
   providers: [AppService],

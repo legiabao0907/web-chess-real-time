@@ -10,16 +10,19 @@ export const REDIS_CLIENT = 'REDIS_CLIENT';
     {
       provide: REDIS_CLIENT,
       useFactory: (configService: ConfigService): Redis => {
-        const client = new Redis({
-          host: configService.get<string>('REDIS_HOST', 'localhost'),
-          port: configService.get<number>('REDIS_PORT', 6379),
-          password: configService.get<string>('REDIS_PASSWORD'),
-          retryStrategy: (times) => {
-            const delay = Math.min(times * 50, 2000);
-            return delay;
-          },
-          maxRetriesPerRequest: 3,
-        });
+        const redisUrl = configService.get<string>('REDIS_URL');
+        const client = redisUrl
+          ? new Redis(redisUrl)
+          : new Redis({
+              host: configService.get<string>('REDIS_HOST', 'localhost'),
+              port: configService.get<number>('REDIS_PORT', 6379),
+              password: configService.get<string>('REDIS_PASSWORD'),
+              retryStrategy: (times) => {
+                const delay = Math.min(times * 50, 2000);
+                return delay;
+              },
+              maxRetriesPerRequest: 3,
+            });
 
         client.on('connect', () => {
           console.log('✅ Redis connected successfully');

@@ -9,14 +9,17 @@ import {
   OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Logger } from '@nestjs/common';
+import { Logger, Optional } from '@nestjs/common';
 import { GameService } from './game.service';
 import {
   CreateGameDto,
   JoinGameDto,
   MakeMoveDto,
   MatchmakingEntry,
+  GameState,
 } from './dto/game.dto';
+import { LeaderboardGateway } from '../leaderboard/leaderboard.gateway';
+import { LeaderboardCategory } from '../leaderboard/dto/leaderboard.dto';
 
 @WebSocketGateway({
   cors: {
@@ -40,7 +43,10 @@ export class GameGateway
     { userId: string; gameId?: string; timeControl?: string; username: string }
   >();
 
-  constructor(private readonly gameService: GameService) {}
+  constructor(
+    private readonly gameService: GameService,
+    @Optional() private readonly leaderboardGateway: LeaderboardGateway,
+  ) {}
 
   afterInit(server: Server) {
     this.logger.log('🎮 Chess WebSocket Gateway initialized');
@@ -333,6 +339,9 @@ export class GameGateway
       // Cleanup user game tracking
       await this.gameService.clearUserCurrentGame(game.whiteId);
       await this.gameService.clearUserCurrentGame(game.blackId);
+
+      // Trigger ELO update & broadcast leaderboard
+      await this.triggerLeaderboardUpdate(game);
     }
   }
 
@@ -362,6 +371,9 @@ export class GameGateway
 
     await this.gameService.clearUserCurrentGame(game.whiteId);
     await this.gameService.clearUserCurrentGame(game.blackId);
+
+    // Trigger ELO update & broadcast leaderboard
+    await this.triggerLeaderboardUpdate(game);
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -467,6 +479,55 @@ export class GameGateway
         return 'Game drawn';
       default:
         return 'Game over';
+    }
+  }
+
+  /**
+   * Map timeControl string to leaderboard category.
+   */
+  private getCategory(timeControl: string): LeaderboardCategory {
+    if (timeControl.startsWith('bullet')) return 'bullet';
+    if (timeControl.startsWith('rapid'))  return 'rapid';
+    return 'blitz'; // default
+  }
+
+  /**
+   * After a game ends, read ELO from Redis and trigger the leaderboard update.
+   * This assumes ELO is stored in player data; falls back to 1200 if missing.
+   */
+  private async triggerLeaderboardUpdate(game: GameState): Promise<void> {
+    if (!this.leaderboardGateway) return;
+    try {
+      const category = this.getCategory(game.timeControl);
+      const isDraw = game.winner === 'draw';
+
+      const [whiteLbRank, blackLbRank] = await Promise.all([
+        this.leaderboardGateway['leaderboardService'].getPlayerRank(game.whiteId, category),
+        this.leaderboardGateway['leaderboardService'].getPlayerRank(game.blackId, category),
+      ]);
+
+      const whiteElo = whiteLbRank.elo ?? 1200;
+      const blackElo = blackLbRank.elo ?? 1200;
+
+      const winnerId   = isDraw ? game.whiteId       : (game.winner === 'white' ? game.whiteId : game.blackId);
+      const loserId    = isDraw ? game.blackId       : (game.winner === 'white' ? game.blackId : game.whiteId);
+      const winnerName = isDraw ? game.whiteUsername : (game.winner === 'white' ? game.whiteUsername : game.blackUsername);
+      const loserName  = isDraw ? game.blackUsername : (game.winner === 'white' ? game.blackUsername : game.whiteUsername);
+      const winnerElo  = isDraw ? whiteElo : (game.winner === 'white' ? whiteElo : blackElo);
+      const loserElo   = isDraw ? blackElo : (game.winner === 'white' ? blackElo : whiteElo);
+
+      await this.leaderboardGateway.triggerEloUpdate({
+        winnerId,
+        winnerUsername: winnerName,
+        loserId,
+        loserUsername:  loserName,
+        winnerElo,
+        loserElo,
+        isDraw,
+        category,
+      });
+    } catch (err) {
+      this.logger.error('Failed to update leaderboard after game', err);
     }
   }
 }

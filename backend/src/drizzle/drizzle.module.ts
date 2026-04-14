@@ -10,9 +10,10 @@ import * as schema from './schema/schema';
       provide: DRIZZLE,
       inject: [ConfigService],
       useFactory: async (configService: ConfigService) => {
-        const databasURL = configService.get<string>('DATABASE_URL');
+        const databaseURL = configService.get<string>('DATABASE_URL');
         const pool = new Pool({
-          connectionString: databasURL,
+          connectionString: databaseURL,
+          ssl: databaseURL.includes('localhost') ? false : { rejectUnauthorized: false },
         });
         return drizzle(pool, { schema }) as NodePgDatabase<typeof schema>;
       },
