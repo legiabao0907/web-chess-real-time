@@ -18,8 +18,8 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
 
   const port = process.env.PORT || 8080;
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
   console.log(`🚀 Backend đang chạy tại port ${port}`);
-  console.log('🎮 Chess WebSocket: ws://localhost:8080/chess');
+  console.log('🎮 Chess WebSocket: ws://0.0.0.0:8080/chess');
 }
 bootstrap();
