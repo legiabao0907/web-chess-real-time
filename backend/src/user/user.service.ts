@@ -3,12 +3,13 @@ import {
   Inject,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../drizzle/schema/schema';
 import { users, friends } from '../drizzle/schema/users.schema';
 import { profileInfo } from '../drizzle/schema/profileInfo.schema';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, sql, or } from 'drizzle-orm';
 import { DRIZZLE } from '../drizzle/drizzle.module';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
@@ -36,11 +37,8 @@ export class UserService {
       .where(eq(users.id, userId))
       .limit(1);
 
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
+    if (!user) throw new NotFoundException('User not found');
 
-    // Get profile metadata (bio, country, avatarUrl)
     const [profile] = await this.db
       .select()
       .from(profileInfo)
@@ -49,7 +47,6 @@ export class UserService {
 
     const meta = (profile?.metadata as Record<string, unknown>) ?? {};
 
-    // Get friends list
     const friendRows = await this.db
       .select({
         id: users.id,
@@ -58,9 +55,7 @@ export class UserService {
       })
       .from(friends)
       .innerJoin(users, eq(users.id, friends.user2Id))
-      .where(
-        and(eq(friends.user1Id, userId), eq(friends.status, 'Accepted')),
-      );
+      .where(and(eq(friends.user1Id, userId), eq(friends.status, 'Accepted')));
 
     return {
       ...user,
@@ -83,7 +78,6 @@ export class UserService {
 
   // ─── PATCH /user/me ────────────────────────────────────────────────────────
   async updateMe(userId: string, dto: UpdateProfileDto) {
-    // Validate username uniqueness if changing
     if (dto.username) {
       const [existing] = await this.db
         .select({ id: users.id })
@@ -101,7 +95,6 @@ export class UserService {
         .where(eq(users.id, userId));
     }
 
-    // Update profile metadata (upsert)
     const [existing] = await this.db
       .select()
       .from(profileInfo)
@@ -165,5 +158,106 @@ export class UserService {
       losses: meta.losses ?? 0,
       draws: meta.draws ?? 0,
     };
+  }
+
+  // ─── GET friendship status ─────────────────────────────────────────────────
+  async getFriendshipStatus(myId: string, targetId: string): Promise<{
+    status: 'none' | 'pending_sent' | 'pending_received' | 'friends';
+  }> {
+    const [sent] = await this.db
+      .select({ status: friends.status })
+      .from(friends)
+      .where(and(eq(friends.user1Id, myId), eq(friends.user2Id, targetId)))
+      .limit(1);
+
+    if (sent) {
+      return { status: sent.status === 'Accepted' ? 'friends' : 'pending_sent' };
+    }
+
+    const [received] = await this.db
+      .select({ status: friends.status })
+      .from(friends)
+      .where(and(eq(friends.user1Id, targetId), eq(friends.user2Id, myId)))
+      .limit(1);
+
+    if (received) {
+      return { status: received.status === 'Accepted' ? 'friends' : 'pending_received' };
+    }
+
+    return { status: 'none' };
+  }
+
+  // ─── POST /user/:id/friend-request ────────────────────────────────────────
+  async sendFriendRequest(myId: string, targetId: string) {
+    if (myId === targetId) throw new BadRequestException('Cannot friend yourself');
+
+    const { status } = await this.getFriendshipStatus(myId, targetId);
+    if (status === 'friends') throw new ConflictException('Already friends');
+    if (status === 'pending_sent') throw new ConflictException('Request already sent');
+
+    // Auto-accept if they already sent us a request
+    if (status === 'pending_received') {
+      return this.acceptFriendRequest(myId, targetId);
+    }
+
+    await (this.db as any)
+      .insert(friends)
+      .values({ user1Id: myId, user2Id: targetId, status: 'Pending' });
+    return { message: 'Friend request sent' };
+  }
+
+  // ─── POST /user/:id/accept-friend ─────────────────────────────────────────
+  async acceptFriendRequest(myId: string, requesterId: string) {
+    await this.db
+      .update(friends)
+      .set({ status: 'Accepted' })
+      .where(and(eq(friends.user1Id, requesterId), eq(friends.user2Id, myId)));
+
+    // Add reverse record for bidirectional lookup
+    const [existing] = await this.db
+      .select()
+      .from(friends)
+      .where(and(eq(friends.user1Id, myId), eq(friends.user2Id, requesterId)))
+      .limit(1);
+
+    if (!existing) {
+      await (this.db as any)
+        .insert(friends)
+        .values({ user1Id: myId, user2Id: requesterId, status: 'Accepted' });
+    } else {
+      await this.db
+        .update(friends)
+        .set({ status: 'Accepted' })
+        .where(and(eq(friends.user1Id, myId), eq(friends.user2Id, requesterId)));
+    }
+
+    return { message: 'Friend request accepted' };
+  }
+
+  // ─── DELETE /user/:id/friend ───────────────────────────────────────────────
+  async removeFriend(myId: string, targetId: string) {
+    await this.db.delete(friends).where(
+      or(
+        and(eq(friends.user1Id, myId), eq(friends.user2Id, targetId)),
+        and(eq(friends.user1Id, targetId), eq(friends.user2Id, myId)),
+      ),
+    );
+    return { message: 'Friend removed' };
+  }
+
+  // ─── GET pending friend requests ──────────────────────────────────────────
+  async getPendingRequests(myId: string) {
+    const rows = await this.db
+      .select({
+        id: users.id,
+        username: users.username,
+        eloBlitz: users.blitzRating,
+        createdAt: users.createdAt,
+      })
+      .from(friends)
+      .innerJoin(users, eq(users.id, friends.user1Id))
+      .where(and(eq(friends.user2Id, myId), eq(friends.status, 'Pending')));
+
+    return rows;
   }
 }

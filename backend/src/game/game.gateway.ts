@@ -20,6 +20,9 @@ import {
 } from './dto/game.dto';
 import { LeaderboardGateway } from '../leaderboard/leaderboard.gateway';
 import { LeaderboardCategory } from '../leaderboard/dto/leaderboard.dto';
+import { WatchGateway } from '../watch/watch.gateway';
+import { TournamentService } from '../tournament/tournament.service';
+import { TournamentGateway } from '../tournament/tournament.gateway';
 
 @WebSocketGateway({
   cors: {
@@ -30,8 +33,7 @@ import { LeaderboardCategory } from '../leaderboard/dto/leaderboard.dto';
   transports: ['websocket', 'polling'],
 })
 export class GameGateway
-  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
-{
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
@@ -46,7 +48,10 @@ export class GameGateway
   constructor(
     private readonly gameService: GameService,
     @Optional() private readonly leaderboardGateway: LeaderboardGateway,
-  ) {}
+    @Optional() private readonly watchGateway: WatchGateway,
+    @Optional() private readonly tournamentService: TournamentService,
+    @Optional() private readonly tournamentGateway: TournamentGateway,
+  ) { }
 
   afterInit(server: Server) {
     this.logger.log('🎮 Chess WebSocket Gateway initialized');
@@ -54,7 +59,7 @@ export class GameGateway
 
   async handleConnection(client: Socket) {
     this.logger.log(`Client connected: ${client.id}`);
-    
+
     // We can't automatically find user games by socketId alone if it's new
     // but the client can send a request to check by their userId.
     client.emit('connected', { socketId: client.id, message: 'Connected to Chess Gateway' });
@@ -69,30 +74,30 @@ export class GameGateway
     if (!userId) return;
 
     this.connectedClients.set(client.id, { userId, username });
-    
+
     const gameId = await this.gameService.getUserCurrentGame(userId);
     if (gameId) {
-       this.logger.log(`User ${userId} reclaiming active game ${gameId}`);
-       const game = await this.gameService.getGame(gameId);
-       if (game && game.status === 'active') {
-          await client.join(gameId);
-          client.emit('game_state', {
-            gameId: game.id,
-            fen: game.fen,
-            pgn: game.pgn,
-            whiteId: game.whiteId,
-            blackId: game.blackId,
-            whiteUsername: game.whiteUsername,
-            blackUsername: game.blackUsername,
-            status: game.status,
-            timeControl: game.timeControl,
-            whiteTimeMs: game.whiteTimeMs,
-            blackTimeMs: game.blackTimeMs,
-            turn: game.turn,
-            moveHistory: game.moveHistory,
-            lastMoveAt: game.lastMoveAt,
-          });
-       }
+      this.logger.log(`User ${userId} reclaiming active game ${gameId}`);
+      const game = await this.gameService.getGame(gameId);
+      if (game && game.status === 'active') {
+        await client.join(gameId);
+        client.emit('game_state', {
+          gameId: game.id,
+          fen: game.fen,
+          pgn: game.pgn,
+          whiteId: game.whiteId,
+          blackId: game.blackId,
+          whiteUsername: game.whiteUsername,
+          blackUsername: game.blackUsername,
+          status: game.status,
+          timeControl: game.timeControl,
+          whiteTimeMs: game.whiteTimeMs,
+          blackTimeMs: game.blackTimeMs,
+          turn: game.turn,
+          moveHistory: game.moveHistory,
+          lastMoveAt: game.lastMoveAt,
+        });
+      }
     }
   }
 
@@ -190,7 +195,7 @@ export class GameGateway
       // Find opponent's socket and join them to the room
       const opponentSocketId = opponent.socketId;
       const opponentSocket = (this.server.sockets as any).get(opponentSocketId);
-      
+
       if (opponentSocket) {
         await opponentSocket.join(gameId);
         const opponentInfo = this.connectedClients.get(opponentSocketId);
@@ -326,15 +331,26 @@ export class GameGateway
 
     this.server.to(gameId).emit('move_made', moveUpdate);
 
+    // Broadcast to spectators in /watch namespace
+    if (this.watchGateway) {
+      this.watchGateway.broadcastGameUpdate(gameId, moveUpdate);
+    }
+
     // If game is over, emit game_over
     if (game.status !== 'active') {
-      this.server.to(gameId).emit('game_over', {
+      const gameOverData = {
         gameId,
         status: game.status,
         winner: game.winner,
         pgn: game.pgn,
         message: this.getGameOverMessage(game.status, game.winner),
-      });
+      };
+      this.server.to(gameId).emit('game_over', gameOverData);
+
+      // Broadcast game over to spectators
+      if (this.watchGateway) {
+        this.watchGateway.broadcastGameOver(gameId, gameOverData);
+      }
 
       // Cleanup user game tracking
       await this.gameService.clearUserCurrentGame(game.whiteId);
@@ -342,6 +358,12 @@ export class GameGateway
 
       // Trigger ELO update & broadcast leaderboard
       await this.triggerLeaderboardUpdate(game);
+
+      // Record tournament result if this is a tournament game
+      await this.recordTournamentGameResult(gameId, game);
+
+      // Persist to Postgres for history
+      await this.gameService.saveGameToDb(gameId);
     }
   }
 
@@ -362,18 +384,30 @@ export class GameGateway
       return;
     }
 
-    this.server.to(gameId).emit('game_over', {
+    const resignData = {
       gameId,
       status: 'resigned',
       winner: game.winner,
       message: `${userId === game.whiteId ? game.whiteUsername : game.blackUsername} resigned`,
-    });
+    };
+    this.server.to(gameId).emit('game_over', resignData);
+
+    // Broadcast resign to spectators
+    if (this.watchGateway) {
+      this.watchGateway.broadcastGameOver(gameId, resignData);
+    }
 
     await this.gameService.clearUserCurrentGame(game.whiteId);
     await this.gameService.clearUserCurrentGame(game.blackId);
 
     // Trigger ELO update & broadcast leaderboard
     await this.triggerLeaderboardUpdate(game);
+
+    // Record tournament result
+    await this.recordTournamentGameResult(gameId, game);
+
+    // Persist to Postgres for history
+    await this.gameService.saveGameToDb(gameId);
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -399,6 +433,9 @@ export class GameGateway
         });
         await this.gameService.clearUserCurrentGame(game.whiteId);
         await this.gameService.clearUserCurrentGame(game.blackId);
+
+        // Persist to Postgres
+        await this.gameService.saveGameToDb(gameId);
       }
     } else {
       // Notify opponent of draw offer
@@ -428,6 +465,9 @@ export class GameGateway
       });
       await this.gameService.clearUserCurrentGame(game.whiteId);
       await this.gameService.clearUserCurrentGame(game.blackId);
+
+      // Persist to Postgres
+      await this.gameService.saveGameToDb(gameId);
     }
   }
 
@@ -464,6 +504,34 @@ export class GameGateway
   // Helpers
   // ──────────────────────────────────────────────────────────────────────
 
+  // ── Tournament result recording ────────────────────────────────────────────
+  private async recordTournamentGameResult(gameId: string, game: GameState): Promise<void> {
+    if (!this.tournamentService || !this.tournamentGateway) return;
+    try {
+      const info = await this.tournamentService.getTournamentGameInfo(gameId);
+      if (!info) return;
+      const result: 'white' | 'black' | 'draw' =
+        game.winner === 'white' ? 'white' : game.winner === 'black' ? 'black' : 'draw';
+      const round = await this.tournamentService.recordTournamentResult(
+        info.tournamentId,
+        gameId,
+        result,
+      );
+      if (round) {
+        const tournament = await this.tournamentService.getTournament(info.tournamentId);
+        this.tournamentGateway.broadcastTournamentUpdate(info.tournamentId, {
+          type: 'game_result',
+          tournament,
+          round,
+          gameId,
+          result,
+        });
+      }
+    } catch (err) {
+      this.logger.error('Failed to record tournament game result', err);
+    }
+  }
+
   private getGameOverMessage(
     status: string,
     winner?: string,
@@ -487,7 +555,7 @@ export class GameGateway
    */
   private getCategory(timeControl: string): LeaderboardCategory {
     if (timeControl.startsWith('bullet')) return 'bullet';
-    if (timeControl.startsWith('rapid'))  return 'rapid';
+    if (timeControl.startsWith('rapid')) return 'rapid';
     return 'blitz'; // default
   }
 
@@ -509,18 +577,18 @@ export class GameGateway
       const whiteElo = whiteLbRank.elo ?? 1200;
       const blackElo = blackLbRank.elo ?? 1200;
 
-      const winnerId   = isDraw ? game.whiteId       : (game.winner === 'white' ? game.whiteId : game.blackId);
-      const loserId    = isDraw ? game.blackId       : (game.winner === 'white' ? game.blackId : game.whiteId);
+      const winnerId = isDraw ? game.whiteId : (game.winner === 'white' ? game.whiteId : game.blackId);
+      const loserId = isDraw ? game.blackId : (game.winner === 'white' ? game.blackId : game.whiteId);
       const winnerName = isDraw ? game.whiteUsername : (game.winner === 'white' ? game.whiteUsername : game.blackUsername);
-      const loserName  = isDraw ? game.blackUsername : (game.winner === 'white' ? game.blackUsername : game.whiteUsername);
-      const winnerElo  = isDraw ? whiteElo : (game.winner === 'white' ? whiteElo : blackElo);
-      const loserElo   = isDraw ? blackElo : (game.winner === 'white' ? blackElo : whiteElo);
+      const loserName = isDraw ? game.blackUsername : (game.winner === 'white' ? game.blackUsername : game.whiteUsername);
+      const winnerElo = isDraw ? whiteElo : (game.winner === 'white' ? whiteElo : blackElo);
+      const loserElo = isDraw ? blackElo : (game.winner === 'white' ? blackElo : whiteElo);
 
       await this.leaderboardGateway.triggerEloUpdate({
         winnerId,
         winnerUsername: winnerName,
         loserId,
-        loserUsername:  loserName,
+        loserUsername: loserName,
         winnerElo,
         loserElo,
         isDraw,

@@ -5,6 +5,9 @@ import { io, Socket } from "socket.io-client";
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8080";
 
+// sessionStorage key for persisting active game across page reloads
+const SESSION_GAME_KEY = "chess_active_game";
+
 export type GameStatus = "idle" | "searching" | "active" | "finished" | "draw" | "resigned";
 
 export interface GameState {
@@ -38,15 +41,47 @@ interface UseChessSocketOptions {
   username: string;
 }
 
+// ── Helpers to persist game in sessionStorage ──────────────────────────────
+function saveGameToSession(game: GameState | null) {
+  if (typeof window === "undefined") return;
+  if (game && game.status === "active") {
+    sessionStorage.setItem(SESSION_GAME_KEY, JSON.stringify(game));
+  } else {
+    sessionStorage.removeItem(SESSION_GAME_KEY);
+  }
+}
+
+function loadGameFromSession(): GameState | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(SESSION_GAME_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as GameState;
+  } catch {
+    return null;
+  }
+}
+
 export function useChessSocket({ userId, username }: UseChessSocketOptions) {
   const socketRef = useRef<Socket | null>(null);
   const [connected, setConnected] = useState(false);
-  const [gameStatus, setGameStatus] = useState<GameStatus>("idle");
-  const [game, setGame] = useState<GameState | null>(null);
+
+  // Initialize game state from sessionStorage on first render (survive reload)
+  const [game, setGame] = useState<GameState | null>(() => loadGameFromSession());
+  const [gameStatus, setGameStatus] = useState<GameStatus>(() => {
+    const saved = loadGameFromSession();
+    return saved ? (saved.status as GameStatus) : "idle";
+  });
+
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [drawOffered, setDrawOffered] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [searchingTimeControl, setSearchingTimeControl] = useState<string | null>(null);
+
+  // Keep sessionStorage in sync whenever game changes
+  useEffect(() => {
+    saveGameToSession(game);
+  }, [game]);
 
   useEffect(() => {
     if (!userId) return;
@@ -63,6 +98,7 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
     socket.on("connect", () => {
       setConnected(true);
       console.log("✅ Socket connected:", socket.id);
+      // Always send reconnect_check — backend will restore active game if any
       socket.emit("reconnect_check", { userId, username });
     });
 
@@ -85,6 +121,7 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
     });
 
     socket.on("game_state", (data: GameState) => {
+      // Backend restored the game after reconnect
       setGame(data);
       setGameStatus(data.status as GameStatus);
     });
@@ -92,24 +129,27 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
     socket.on("move_made", (data: Partial<GameState> & { lastMove?: { from: string; to: string } }) => {
       setGame((prev) => {
         if (!prev) return null;
-        return {
+        const updated = {
           ...prev,
           ...data,
           status: (data.status ?? prev.status) as GameStatus,
         };
+        return updated;
       });
     });
 
     socket.on("game_over", (data: { gameId: string; status: string; winner?: string; message: string }) => {
-      setGame((prev) =>
-        prev
-          ? {
-              ...prev,
-              status: data.status as GameStatus,
-              winner: data.winner as "white" | "black" | "draw" | undefined,
-            }
-          : null
-      );
+      setGame((prev) => {
+        if (!prev) return null;
+        const updated = {
+          ...prev,
+          status: data.status as GameStatus,
+          winner: data.winner as "white" | "black" | "draw" | undefined,
+        };
+        // Clear sessionStorage when game ends
+        sessionStorage.removeItem(SESSION_GAME_KEY);
+        return updated;
+      });
       setGameStatus(data.status as GameStatus);
     });
 
@@ -123,7 +163,7 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
     });
 
     socket.on("draw_offer_sent", () => {
-      // Optimistic UI - already handled
+      // Optimistic UI
     });
 
     socket.on("draw_declined", () => {

@@ -18,8 +18,11 @@ import {
   Globe,
   Calendar,
   TrendingUp,
+  MessageCircle,
+  History,
 } from "lucide-react";
 import { useProfileStore } from "@/store/useProfileStore";
+import { useChatStore } from "@/store/useChatStore";
 import "./ProfilePanel.css";
 
 // ─── Tab definitions ─────────────────────────────────────────────────────────
@@ -27,6 +30,7 @@ const TABS = [
   { id: "overview" as const, label: "Overview", icon: User },
   { id: "dashboard" as const, label: "Dashboard", icon: BarChart2 },
   { id: "edit" as const, label: "Edit Profile", icon: Edit3 },
+  { id: "history" as const, label: "History", icon: History },
   { id: "friends" as const, label: "Friends", icon: Users },
 ];
 
@@ -335,7 +339,14 @@ function EditTab() {
 // ─── Friends Tab ───────────────────────────────────────────────────────────
 function FriendsTab() {
   const profile = useProfileStore((s) => s.profile);
+  const { closeProfile } = useProfileStore();
+  const { openChat, onlineUsers } = useChatStore();
   const friends = profile?.friends ?? [];
+
+  const handleChat = (friendId: string, friendUsername: string) => {
+    closeProfile();
+    openChat(friendId, friendUsername);
+  };
 
   return (
     <div className="pp-tab-content">
@@ -347,30 +358,163 @@ function FriendsTab() {
         <div className="pp-empty-state">
           <Users size={32} opacity={0.3} />
           <p>No friends yet</p>
+          <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.3)", marginTop: "4px" }}>
+            Add friends by clicking their profile during a game
+          </p>
         </div>
       ) : (
         <div className="pp-friends-list">
-          {friends.map((f) => (
-            <div key={f.id} className="pp-friend-card">
-              <div className="pp-friend-avatar">
-                {f.avatarUrl ? (
-                  <img src={f.avatarUrl} alt={f.username} />
-                ) : (
-                  <User size={20} color="#a855f7" />
-                )}
-                <span className={`pp-online-dot ${f.isOnline ? "online" : "offline"}`} />
+          {friends.map((f) => {
+            const isOnline = onlineUsers.has(f.id);
+            return (
+              <div key={f.id} className="pp-friend-card">
+                <div className="pp-friend-avatar">
+                  {f.avatarUrl ? (
+                    <img src={f.avatarUrl} alt={f.username} />
+                  ) : (
+                    <img
+                      src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${f.username}`}
+                      alt={f.username}
+                      style={{ width: "100%", height: "100%", borderRadius: "50%" }}
+                    />
+                  )}
+                  <span className={`pp-online-dot ${isOnline ? "online" : "offline"}`} />
+                </div>
+                <div className="pp-friend-info">
+                  <span className="pp-friend-name">{f.username}</span>
+                  <span className="pp-friend-elo" style={{ color: eloColor(f.eloBlitz) }}>
+                    {f.eloBlitz} Blitz
+                  </span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      color: isOnline ? "#22c55e" : "rgba(255,255,255,0.3)",
+                      minWidth: "44px",
+                      textAlign: "right",
+                    }}
+                  >
+                    {isOnline ? "● Online" : "○ Offline"}
+                  </span>
+                  <button
+                    onClick={() => handleChat(f.id, f.username)}
+                    title="Send message"
+                    style={{
+                      background: "rgba(168,85,247,0.15)",
+                      border: "1px solid rgba(168,85,247,0.3)",
+                      borderRadius: "8px",
+                      color: "#a855f7",
+                      cursor: "pointer",
+                      padding: "5px 8px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      transition: "all 0.2s",
+                      flexShrink: 0,
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLElement).style.background = "rgba(168,85,247,0.3)";
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLElement).style.background = "rgba(168,85,247,0.15)";
+                    }}
+                  >
+                    <MessageCircle size={12} />
+                    Chat
+                  </button>
+                </div>
               </div>
-              <div className="pp-friend-info">
-                <span className="pp-friend-name">{f.username}</span>
-                <span className="pp-friend-elo" style={{ color: eloColor(f.eloBlitz) }}>
-                  {f.eloBlitz} Blitz
-                </span>
-              </div>
-              <span className="pp-friend-status">{f.isOnline ? "Online" : "Offline"}</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── History Tab ───────────────────────────────────────────────────────────
+function HistoryTab() {
+  const [games, setGames] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const profile = useProfileStore((s) => s.profile);
+
+  React.useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8080";
+        const token = localStorage.getItem("accessToken");
+        const res = await fetch(`${API_URL}/game/history`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setGames(data.slice(0, 10)); // Show last 10
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchHistory();
+  }, []);
+
+  if (loading) return (
+    <div className="pp-loading">
+      <Loader2 size={24} className="pp-spin" color="#a855f7" />
+    </div>
+  );
+
+  return (
+    <div className="pp-tab-content">
+      <div className="pp-section-title">
+        <History size={14} />
+        RECENT GAMES
+      </div>
+      {games.length === 0 ? (
+        <div className="pp-empty-state">
+          <History size={32} opacity={0.2} />
+          <p>No games played yet</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {games.map((g) => {
+            const isWhite = g.whiteId === profile?.id;
+            const isWinner = g.winnerId === profile?.id;
+            const isDraw = g.status === "draw";
+            return (
+              <div key={g.id} className="pp-game-item">
+                <div className="pp-game-meta">
+                  <span className="pp-game-tc">{g.timeControl.split("_")[0]}</span>
+                  <span className="pp-game-date">{new Date(g.createdAt).toLocaleDateString()}</span>
+                </div>
+                <div className="pp-game-players">
+                  <span style={{ color: isWhite ? "#a855f7" : "white" }}>{g.whiteUsername}</span>
+                  <span style={{ opacity: 0.3 }}>vs</span>
+                  <span style={{ color: !isWhite ? "#a855f7" : "white" }}>{g.blackUsername}</span>
+                </div>
+                <div className={`pp-game-result ${isDraw ? "draw" : isWinner ? "win" : "loss"}`}>
+                  {isDraw ? "½" : isWinner ? "+1" : "-1"}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <a href="/archives" style={{
+        display: "block",
+        textAlign: "center",
+        marginTop: "1rem",
+        color: "#a855f7",
+        fontSize: "12px",
+        textDecoration: "none",
+        fontWeight: 600
+      }}>
+        VIEW FULL ARCHIVES →
+      </a>
     </div>
   );
 }
@@ -456,6 +600,7 @@ export default function ProfilePanel() {
               {activeTab === "overview" && <OverviewTab />}
               {activeTab === "dashboard" && <DashboardTab />}
               {activeTab === "edit" && <EditTab />}
+              {activeTab === "history" && <HistoryTab />}
               {activeTab === "friends" && <FriendsTab />}
             </>
           )}

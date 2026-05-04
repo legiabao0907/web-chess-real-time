@@ -9,6 +9,9 @@ import { RedisModule } from './redis/redis.module';
 import { GameModule } from './game/game.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { UserModule } from './user/user.module';
+import { ChatModule } from './chat/chat.module';
+import { WatchModule } from './watch/watch.module';
+import { TournamentModule } from './tournament/tournament.module';
 
 @Module({
   imports: [
@@ -19,8 +22,12 @@ import { UserModule } from './user/user.module';
     GameModule,
     LeaderboardModule,
     UserModule,
+    ChatModule,
+    WatchModule,
+    TournamentModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
 export class AppModule {}
+

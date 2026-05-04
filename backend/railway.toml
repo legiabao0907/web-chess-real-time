@@ -1,0 +1,7 @@
+[build]
+builder = "nixpacks"
+watchPatterns = ["backend/**"]
+
+[deploy]
+startCommand = "npm run start:prod"
+restartPolicyType = "on_failure"

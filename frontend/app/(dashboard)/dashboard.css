@@ -652,6 +652,11 @@
   }
 }
 
+@keyframes liveBadgePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
 .chart-card {
   background-color: #121216;
   border: 1px solid rgba(255, 255, 255, 0.05);

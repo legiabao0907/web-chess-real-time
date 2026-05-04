@@ -3,21 +3,26 @@
 import React, { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { 
-  Home, 
-  Swords, 
-  BrainCircuit, 
-  Trophy, 
-  History, 
-  Settings, 
+import {
+  Home,
+  Swords,
+  BrainCircuit,
+  Trophy,
+  History,
+  Settings,
   Bell,
   LogOut,
-  User
+  User,
+  MessageCircle,
+  Radio
 } from "lucide-react";
 import "./dashboard.css";
 import { clearTokens, clearCookies, getUser } from "@/lib/auth";
 import { useProfileStore } from "@/store/useProfileStore";
 import ProfilePanel from "@/components/common/ProfilePanel";
+import ChatDrawer from "@/components/common/ChatDrawer";
+import { useChatStore, useTotalUnread } from "@/store/useChatStore";
+import { useFriendChat } from "@/hooks/useFriendChat";
 
 export default function DashboardLayout({
   children,
@@ -26,6 +31,16 @@ export default function DashboardLayout({
 }) {
   const router = useRouter();
   const { openProfile, profile, loadProfile } = useProfileStore();
+  const { openChat } = useChatStore();
+  const totalUnread = useTotalUnread();
+  const user = getUser();
+
+  // Initialize friend chat socket connection for the whole dashboard session
+  useFriendChat({
+    userId: user?.id ?? '',
+    username: user?.username ?? '',
+    enabled: !!user?.id,
+  });
 
   // Load profile data on mount from localStorage
   useEffect(() => {
@@ -47,6 +62,7 @@ export default function DashboardLayout({
   return (
     <>
       <ProfilePanel />
+      <ChatDrawer />
 
       <div className="dashboard-layout">
         {/* Sidebar */}
@@ -75,9 +91,19 @@ export default function DashboardLayout({
                 <div className="active-indicator"></div>
               </Link>
 
-              <Link href="/live" className="nav-link">
-                <Swords size={18} />
+              <Link href="/live" className="nav-link" style={{ position: 'relative' }}>
+                <Radio size={18} color="#ef4444" />
                 <span className="nav-text">LIVE MATCHES</span>
+                <span style={{
+                  position: 'absolute',
+                  top: '6px',
+                  right: '8px',
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  background: '#ef4444',
+                  animation: 'liveBadgePulse 1.5s infinite',
+                }} />
               </Link>
 
               <Link href="/analysis" className="nav-link">
@@ -90,10 +116,42 @@ export default function DashboardLayout({
                 <span className="nav-text">GLOBAL RANKS</span>
               </Link>
 
+              <Link href="/tournaments" className="nav-link">
+                <Swords size={18} />
+                <span className="nav-text">TOURNAMENTS</span>
+              </Link>
+
               <Link href="/archives" className="nav-link">
                 <History size={18} />
                 <span className="nav-text">ARCHIVES</span>
               </Link>
+
+              {/* Chat button */}
+              <button
+                onClick={() => openChat('', '')}
+                className="nav-link"
+                style={{ width: '100%', background: 'none', border: 'none', color: '#8b7fa8', cursor: 'pointer', textAlign: 'left', position: 'relative' }}
+              >
+                <MessageCircle size={18} />
+                <span className="nav-text">MESSAGES</span>
+                {totalUnread > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    top: '6px',
+                    right: '8px',
+                    background: '#a855f7',
+                    color: 'white',
+                    borderRadius: '12px',
+                    padding: '1px 6px',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    minWidth: '18px',
+                    textAlign: 'center',
+                  }}>
+                    {totalUnread > 9 ? '9+' : totalUnread}
+                  </span>
+                )}
+              </button>
 
               <div className="find-match-container">
                 <Link href="/play" className="btn-primary" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
@@ -108,9 +166,9 @@ export default function DashboardLayout({
               <Settings size={18} />
               <span className="nav-text">SETTINGS</span>
             </Link>
-            <button 
+            <button
               onClick={handleLogout}
-              className="nav-link logout-btn" 
+              className="nav-link logout-btn"
               style={{ width: '100%', background: 'none', border: 'none', color: '#8b7fa8', cursor: 'pointer', textAlign: 'left' }}
             >
               <LogOut size={18} color="#ef4444" />
@@ -123,9 +181,9 @@ export default function DashboardLayout({
         <main className="main-area">
           <header className="top-header">
             <nav className="top-nav">
-              <span className="top-nav-item active">SANCTUARY</span>
+              <Link href="/home" className="top-nav-item active">SANCTUARY</Link>
               <span className="top-nav-item">NEURAL ANALYSIS</span>
-              <span className="top-nav-item">ARCHIVES</span>
+              <Link href="/archives" className="top-nav-item">ARCHIVES</Link>
             </nav>
 
             <div className="header-right">
@@ -133,12 +191,12 @@ export default function DashboardLayout({
                 <span className="elo-label">ELO </span>
                 <span className="elo-value">{displayUser?.eloBlitz || 1200}</span>
               </div>
-              
+
               <button className="bell-btn">
                 <Bell size={20} />
                 <span className="bell-indicator"></span>
               </button>
-              
+
               {/* Avatar: click to open profile panel */}
               <button
                 id="profile-avatar-btn"
@@ -160,7 +218,7 @@ export default function DashboardLayout({
           <div className="content-scroll">
             {children}
           </div>
-          
+
           <div className="footer-info">
             <span>The Protocol</span>
             <span>Privacy Void</span>
