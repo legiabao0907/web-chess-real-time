@@ -23,6 +23,14 @@ export interface CreateGameDto {
   side?: 'white' | 'black' | 'random';
 }
 
+export interface StartBotGameDto {
+  userId: string;
+  username: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  side?: 'white' | 'black'; // player's side
+  timeControl?: string;
+}
+
 export interface GameState {
   id: string;
   fen: string;
@@ -40,6 +48,10 @@ export interface GameState {
   winner?: 'white' | 'black' | 'draw';
   moveHistory: string[];
   createdAt: number;
+  // Bot game fields
+  isBot?: boolean;
+  botDifficulty?: 'easy' | 'medium' | 'hard';
+  botColor?: 'w' | 'b'; // which color the BOT plays
 }
 
 export interface MatchmakingEntry {
@@ -50,3 +62,6 @@ export interface MatchmakingEntry {
   rating: number;
   joinedAt: number;
 }
+
+export const BOT_USER_ID = 'BOT';
+export const BOT_USERNAME = 'Chess Bot';

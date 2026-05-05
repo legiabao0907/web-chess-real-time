@@ -9,11 +9,14 @@ import {
   CreateGameDto,
   JoinGameDto,
   MakeMoveDto,
+  BOT_USER_ID,
 } from './dto/game.dto';
 import { DRIZZLE } from '../drizzle/drizzle.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../drizzle/schema/schema';
-import { eq, or, desc, alias } from 'drizzle-orm';
+import { games } from '../drizzle/schema/game.schema';
+import { users } from '../drizzle/schema/users.schema';
+import { eq, or, desc, aliasedTable } from 'drizzle-orm';
 
 const TIME_CONTROLS: Record<string, { baseMs: number; incrementMs: number }> = {
   bullet_1: { baseMs: 60_000, incrementMs: 0 },
@@ -181,35 +184,42 @@ export class GameService {
       return { success: false, error: 'Game is not active' };
     }
 
-    // Check turn
+    // Check turn (BOT bypasses turn validation)
     const isWhiteTurn = game.turn === 'w';
-    if (isWhiteTurn && userId !== game.whiteId) {
-      return { success: false, error: 'Not your turn' };
-    }
-    if (!isWhiteTurn && userId !== game.blackId) {
-      return { success: false, error: 'Not your turn' };
+    const isBot = userId === BOT_USER_ID;
+    if (!isBot) {
+      if (isWhiteTurn && userId !== game.whiteId) {
+        return { success: false, error: 'Not your turn' };
+      }
+      if (!isWhiteTurn && userId !== game.blackId) {
+        return { success: false, error: 'Not your turn' };
+      }
     }
 
-    // Apply time increment
+    // Apply time clock — bot's own clock is never decremented
     const now = Date.now();
     const elapsed = game.lastMoveAt ? now - game.lastMoveAt : 0;
     const tc = TIME_CONTROLS[game.timeControl] ?? TIME_CONTROLS['blitz_5'];
+    const movingIsBot = isBot; // bot is making this move
 
-    if (isWhiteTurn) {
-      game.whiteTimeMs = Math.max(0, game.whiteTimeMs - elapsed) + tc.incrementMs;
-      if (game.whiteTimeMs <= 0) {
-        game.status = 'finished';
-        game.winner = 'black';
-        await this.saveGame(game);
-        return { success: true, game };
-      }
-    } else {
-      game.blackTimeMs = Math.max(0, game.blackTimeMs - elapsed) + tc.incrementMs;
-      if (game.blackTimeMs <= 0) {
-        game.status = 'finished';
-        game.winner = 'white';
-        await this.saveGame(game);
-        return { success: true, game };
+    if (!movingIsBot) {
+      // Only deduct time for human moves
+      if (isWhiteTurn) {
+        game.whiteTimeMs = Math.max(0, game.whiteTimeMs - elapsed) + tc.incrementMs;
+        if (game.whiteTimeMs <= 0) {
+          game.status = 'finished';
+          game.winner = 'black';
+          await this.saveGame(game);
+          return { success: true, game };
+        }
+      } else {
+        game.blackTimeMs = Math.max(0, game.blackTimeMs - elapsed) + tc.incrementMs;
+        if (game.blackTimeMs <= 0) {
+          game.status = 'finished';
+          game.winner = 'white';
+          await this.saveGame(game);
+          return { success: true, game };
+        }
       }
     }
 
@@ -308,8 +318,7 @@ export class GameService {
         tournamentId = JSON.parse(tournamentGameInfo).tournamentId;
       }
 
-      // Use explicit table from schema object
-      await this.db.insert(schema.games).values({
+      await (this.db as any).insert(games).values({
         id: game.id,
         whiteId: game.whiteId,
         blackId: game.blackId,
@@ -329,52 +338,27 @@ export class GameService {
   }
 
   async getGameHistory(userId: string) {
-    const whitePlayer = alias(schema.users, 'whitePlayer');
-    const blackPlayer = alias(schema.users, 'blackPlayer');
+    const whitePlayer = aliasedTable(users, 'whitePlayer');
+    const blackPlayer = aliasedTable(users, 'blackPlayer');
 
     return this.db
       .select({
-        id: schema.games.id,
-        whiteId: schema.games.whiteId,
-        blackId: schema.games.blackId,
+        id: games.id,
+        whiteId: games.whiteId,
+        blackId: games.blackId,
         whiteUsername: whitePlayer.username,
         blackUsername: blackPlayer.username,
-        winnerId: schema.games.winnerId,
-        status: schema.games.status,
-        timeControl: schema.games.timeControl,
-        pgn: schema.games.pgn,
-        finalFen: schema.games.finalFen,
-        createdAt: schema.games.createdAt,
+        winnerId: games.winnerId,
+        status: games.status,
+        timeControl: games.timeControl,
+        pgn: games.pgn,
+        finalFen: games.finalFen,
+        createdAt: games.createdAt,
       })
-      .from(schema.games)
-      .leftJoin(whitePlayer, eq(schema.games.whiteId, whitePlayer.id))
-      .leftJoin(blackPlayer, eq(schema.games.blackId, blackPlayer.id))
-      .where(or(eq(schema.games.whiteId, userId), eq(schema.games.blackId, userId)))
-      .orderBy(desc(schema.games.createdAt));
-  }
-
-  // Method for debugging persistence
-  async saveDummyGame(userId: string) {
-    const dummyId = uuidv4();
-    try {
-      await this.db.insert(schema.games).values({
-        id: dummyId,
-        whiteId: userId,
-        blackId: userId, // playing self for test
-        status: 'finished',
-        winnerId: userId,
-        timeControl: 'blitz_5',
-        pgn: '1. e4 e5 2. Nf3 Nc6',
-        finalFen: 'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3',
-        createdAt: new Date(),
-      });
-      
-      const countResult = await this.db.select({ count: schema.games.id }).from(schema.games);
-      return { success: true, id: dummyId, totalGamesInDb: countResult.length };
-    } catch (error) {
-      this.logger.error(`[PERSISTENCE] Dummy save failed: ${error.message}`);
-      return { success: false, error: error.message };
-    }
+      .from(games)
+      .leftJoin(whitePlayer, eq(games.whiteId, whitePlayer.id))
+      .leftJoin(blackPlayer, eq(games.blackId, blackPlayer.id))
+      .where(or(eq(games.whiteId, userId), eq(games.blackId, userId)))
+      .orderBy(desc(games.createdAt));
   }
 }
-

@@ -5,10 +5,10 @@ import { io, Socket } from "socket.io-client";
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8080";
 
-// sessionStorage key for persisting active game across page reloads
 const SESSION_GAME_KEY = "chess_active_game";
 
 export type GameStatus = "idle" | "searching" | "active" | "finished" | "draw" | "resigned";
+export type Difficulty = "easy" | "medium" | "hard";
 
 export interface GameState {
   gameId: string;
@@ -27,6 +27,10 @@ export interface GameState {
   winner?: "white" | "black" | "draw";
   lastMove?: { from: string; to: string };
   lastMoveAt?: number;
+  // Bot game fields
+  isBot?: boolean;
+  botDifficulty?: Difficulty;
+  botColor?: "w" | "b";
 }
 
 export interface ChatMessage {
@@ -36,12 +40,20 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+export interface PositionAnalysis {
+  fen: string;
+  score: number;       // centipawns, white-positive
+  bestMove: { from: string; to: string } | null;
+  isGameOver: boolean;
+  isCheckmate: boolean;
+  isDraw: boolean;
+}
+
 interface UseChessSocketOptions {
   userId: string;
   username: string;
 }
 
-// ── Helpers to persist game in sessionStorage ──────────────────────────────
 function saveGameToSession(game: GameState | null) {
   if (typeof window === "undefined") return;
   if (game && game.status === "active") {
@@ -66,7 +78,6 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
   const socketRef = useRef<Socket | null>(null);
   const [connected, setConnected] = useState(false);
 
-  // Initialize game state from sessionStorage on first render (survive reload)
   const [game, setGame] = useState<GameState | null>(() => loadGameFromSession());
   const [gameStatus, setGameStatus] = useState<GameStatus>(() => {
     const saved = loadGameFromSession();
@@ -77,8 +88,8 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
   const [drawOffered, setDrawOffered] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [searchingTimeControl, setSearchingTimeControl] = useState<string | null>(null);
+  const [analysis, setAnalysis] = useState<PositionAnalysis | null>(null);
 
-  // Keep sessionStorage in sync whenever game changes
   useEffect(() => {
     saveGameToSession(game);
   }, [game]);
@@ -98,7 +109,6 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
     socket.on("connect", () => {
       setConnected(true);
       console.log("✅ Socket connected:", socket.id);
-      // Always send reconnect_check — backend will restore active game if any
       socket.emit("reconnect_check", { userId, username });
     });
 
@@ -113,28 +123,36 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
     });
 
     socket.on("game_start", (data: GameState) => {
-      setGame(data);
+      setGame({ ...data, gameId: data.gameId ?? (data as any).id });
       setGameStatus("active");
       setSearchingTimeControl(null);
       setChatMessages([]);
       setDrawOffered(false);
+      setAnalysis(null);
+    });
+
+    // Bot game uses same data shape but separate event
+    socket.on("bot_game_start", (data: GameState) => {
+      setGame({ ...data, gameId: data.gameId ?? (data as any).id });
+      setGameStatus("active");
+      setChatMessages([]);
+      setDrawOffered(false);
+      setAnalysis(null);
     });
 
     socket.on("game_state", (data: GameState) => {
-      // Backend restored the game after reconnect
-      setGame(data);
+      setGame({ ...data, gameId: data.gameId ?? (data as any).id });
       setGameStatus(data.status as GameStatus);
     });
 
     socket.on("move_made", (data: Partial<GameState> & { lastMove?: { from: string; to: string } }) => {
       setGame((prev) => {
         if (!prev) return null;
-        const updated = {
+        return {
           ...prev,
           ...data,
           status: (data.status ?? prev.status) as GameStatus,
         };
-        return updated;
       });
     });
 
@@ -146,7 +164,6 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
           status: data.status as GameStatus,
           winner: data.winner as "white" | "black" | "draw" | undefined,
         };
-        // Clear sessionStorage when game ends
         sessionStorage.removeItem(SESSION_GAME_KEY);
         return updated;
       });
@@ -158,17 +175,9 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
       setTimeout(() => setErrorMessage(null), 3000);
     });
 
-    socket.on("draw_offered", () => {
-      setDrawOffered(true);
-    });
-
-    socket.on("draw_offer_sent", () => {
-      // Optimistic UI
-    });
-
-    socket.on("draw_declined", () => {
-      setDrawOffered(false);
-    });
+    socket.on("draw_offered", () => { setDrawOffered(true); });
+    socket.on("draw_offer_sent", () => { });
+    socket.on("draw_declined", () => { setDrawOffered(false); });
 
     socket.on("chat_message", (msg: ChatMessage) => {
       setChatMessages((prev) => [...prev, msg]);
@@ -185,11 +194,15 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
 
     socket.on("error", (data: { message: string }) => {
       setErrorMessage(data.message);
+      setTimeout(() => setErrorMessage(null), 4000);
     });
 
-    return () => {
-      socket.disconnect();
-    };
+    // Analysis result from backend
+    socket.on("position_analysis", (data: PositionAnalysis) => {
+      setAnalysis(data);
+    });
+
+    return () => { socket.disconnect(); };
   }, [userId]);
 
   // ────────────────────────────────────────────────────
@@ -262,6 +275,30 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
     [userId, username]
   );
 
+  const startBotGame = useCallback(
+    (difficulty: Difficulty, side: "white" | "black" = "white", timeControl = "blitz_5") => {
+      if (!socketRef.current?.connected) return;
+      socketRef.current.emit("start_bot_game", { userId, username, difficulty, side, timeControl });
+    },
+    [userId, username]
+  );
+
+  const analyzePosition = useCallback(
+    (fen: string, gameId?: string) => {
+      socketRef.current?.emit("analyze_position", { fen, gameId });
+    },
+    []
+  );
+
+  const clearGame = useCallback(() => {
+    setGame(null);
+    setGameStatus("idle");
+    setAnalysis(null);
+    setChatMessages([]);
+    setDrawOffered(false);
+    sessionStorage.removeItem(SESSION_GAME_KEY);
+  }, []);
+
   return {
     connected,
     gameStatus,
@@ -270,6 +307,7 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
     drawOffered,
     errorMessage,
     searchingTimeControl,
+    analysis,
     actions: {
       findGame,
       cancelSearch,
@@ -280,6 +318,9 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
       acceptDraw,
       declineDraw,
       sendMessage,
+      startBotGame,
+      analyzePosition,
+      clearGame,
     },
   };
 }

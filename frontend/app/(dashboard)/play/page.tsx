@@ -7,12 +7,13 @@ const Chessboard: any = dynamic(
   { ssr: false }
 );
 import { Chess } from "chess.js";
-import { Flag, Handshake, MessageSquare, Search, X, Send, ChevronLeft, ChevronRight, SkipBack, SkipForward } from "lucide-react";
+import { Flag, Handshake, MessageSquare, Search, X, Send, ChevronLeft, ChevronRight, SkipBack, SkipForward, BarChart3 } from "lucide-react";
 import "./play.css";
 import { useChessSocket } from "@/hooks/useChessSocket";
 import { getUser, AuthUser } from "@/lib/auth";
 import { useChatStore } from "@/store/useChatStore";
 import OpponentProfilePopup from "@/components/chess/OpponentProfilePopup";
+import EvaluationBar from "@/components/chess/EvaluationBar";
 
 export default function PlayPage() {
   const [mounted, setMounted] = useState(false);
@@ -21,6 +22,8 @@ export default function PlayPage() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<"history" | "chat">("history");
   const [chatInput, setChatInput] = useState("");
+  const [analysisEnabled, setAnalysisEnabled] = useState(false);
+  const analysisTimerRef = React.useRef<NodeJS.Timeout | null>(null);
 
   // Arrow-key move navigation
   const [viewIndex, setViewIndex] = useState<number>(-1); // -1 = live (latest)
@@ -43,7 +46,7 @@ export default function PlayPage() {
     setUser(getUser());
   }, []);
 
-  const { connected, gameStatus, game, chatMessages, drawOffered, errorMessage, searchingTimeControl, actions } =
+  const { connected, gameStatus, game, chatMessages, drawOffered, errorMessage, searchingTimeControl, analysis, actions } =
     useChessSocket({ userId: user?.id ?? "", username: user?.username ?? "Guest" });
 
   // Sync clocks
@@ -52,9 +55,13 @@ export default function PlayPage() {
       setWhiteClock(game.whiteTimeMs);
       setBlackClock(game.blackTimeMs);
       localGame.load(game.fen);
-      // Reset to live view when new move comes in
       setViewIndex(-1);
       setViewFen(null);
+      // Auto-analyze if enabled
+      if (analysisEnabled) {
+        if (analysisTimerRef.current) clearTimeout(analysisTimerRef.current);
+        analysisTimerRef.current = setTimeout(() => actions.analyzePosition(game.fen, game.gameId), 400);
+      }
     }
   }, [game?.whiteTimeMs, game?.blackTimeMs, game?.fen, game?.gameId, localGame]);
 
@@ -289,8 +296,16 @@ export default function PlayPage() {
         </div>
 
         {/* Board */}
-        <div className="board-wrapper p-4 relative flex-1 flex justify-center items-center">
-          <div className={`w-full max-w-[600px] max-h-[600px] aspect-square relative`}>
+        <div className="board-wrapper p-4 relative flex-1 flex gap-3 justify-center items-center">
+          {/* Evaluation Bar */}
+          {analysisEnabled && analysis && (
+            <EvaluationBar
+              score={analysis.score}
+              orientation={!isPlayerWhite ? "black" : "white"}
+              isCheckmate={analysis.isCheckmate}
+            />
+          )}
+          <div className={`w-full max-w-[580px] max-h-[580px] aspect-square relative`}>
             {typeof window !== "undefined" && (
               <Chessboard
                 position={displayFen}
@@ -366,10 +381,35 @@ export default function PlayPage() {
               </span>
             )}
           </button>
-          <span className="ml-3 text-xs bg-[#a855f7]/20 text-[#a855f7] px-2 py-1 rounded">
+          <button
+            onClick={() => {
+              const next = !analysisEnabled;
+              setAnalysisEnabled(next);
+              if (next && game?.fen) actions.analyzePosition(game.fen, game.gameId);
+            }}
+            title="Toggle analysis bar"
+            className={`ml-2 p-1.5 rounded transition ${analysisEnabled ? "bg-[#a855f7]/20 text-[#a855f7]" : "text-white/30 hover:text-white/60"}`}
+          >
+            <BarChart3 size={13} />
+          </button>
+          <span className="ml-2 text-xs bg-[#a855f7]/20 text-[#a855f7] px-2 py-1 rounded">
             {game?.timeControl?.replace("_", " ") ?? "---"}
           </span>
         </div>
+        {/* Analysis score strip */}
+        {analysisEnabled && analysis && (
+          <div className="flex items-center justify-between px-3 py-1.5 bg-[#a855f7]/5 border-b border-[#a855f7]/15 text-xs">
+            <span className="text-white/40 uppercase tracking-wider font-bold">Eval</span>
+            <span className="font-mono font-bold" style={{ color: analysis.score > 30 ? '#f0d9b5' : analysis.score < -30 ? '#aaa' : '#888' }}>
+              {analysis.isCheckmate ? (analysis.score > 0 ? 'White mates' : 'Black mates') : Math.abs(analysis.score) < 30 ? 'Equal' : `${analysis.score > 0 ? '+' : ''}${(analysis.score / 100).toFixed(2)}`}
+            </span>
+            {analysis.bestMove && (
+              <span className="text-[#a855f7] font-mono bg-[#a855f7]/15 px-1.5 py-0.5 rounded">
+                {analysis.bestMove.from}→{analysis.bestMove.to}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Moves Tab */}
         {activeTab === "history" && (

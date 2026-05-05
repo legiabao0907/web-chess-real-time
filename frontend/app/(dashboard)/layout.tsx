@@ -14,7 +14,8 @@ import {
   LogOut,
   User,
   MessageCircle,
-  Radio
+  Radio,
+  Bot
 } from "lucide-react";
 import "./dashboard.css";
 import { clearTokens, clearCookies, getUser } from "@/lib/auth";
@@ -124,6 +125,23 @@ export default function DashboardLayout({
               <Link href="/archives" className="nav-link">
                 <History size={18} />
                 <span className="nav-text">ARCHIVES</span>
+              </Link>
+
+              <Link href="/play-bot" className="nav-link" style={{ position: 'relative' }}>
+                <Bot size={18} style={{ color: '#a855f7' }} />
+                <span className="nav-text">PLAY VS BOT</span>
+                <span style={{
+                  position: 'absolute',
+                  top: '6px',
+                  right: '8px',
+                  fontSize: '9px',
+                  fontWeight: 700,
+                  background: 'rgba(168,85,247,0.2)',
+                  color: '#a855f7',
+                  padding: '1px 5px',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(168,85,247,0.3)',
+                }}>AI</span>
               </Link>
 
               {/* Chat button */}

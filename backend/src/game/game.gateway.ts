@@ -17,12 +17,16 @@ import {
   MakeMoveDto,
   MatchmakingEntry,
   GameState,
+  StartBotGameDto,
+  BOT_USER_ID,
+  BOT_USERNAME,
 } from './dto/game.dto';
 import { LeaderboardGateway } from '../leaderboard/leaderboard.gateway';
 import { LeaderboardCategory } from '../leaderboard/dto/leaderboard.dto';
 import { WatchGateway } from '../watch/watch.gateway';
 import { TournamentService } from '../tournament/tournament.service';
 import { TournamentGateway } from '../tournament/tournament.gateway';
+import { AiService, Difficulty } from '../ai/ai.service';
 
 @WebSocketGateway({
   cors: {
@@ -39,7 +43,7 @@ export class GameGateway
 
   private readonly logger = new Logger(GameGateway.name);
 
-  // Map socketId -> { userId, gameId, timeControl }
+  // Map socketId -> { userId, gameId, timeControl, username }
   private connectedClients = new Map<
     string,
     { userId: string; gameId?: string; timeControl?: string; username: string }
@@ -47,6 +51,7 @@ export class GameGateway
 
   constructor(
     private readonly gameService: GameService,
+    private readonly aiService: AiService,
     @Optional() private readonly leaderboardGateway: LeaderboardGateway,
     @Optional() private readonly watchGateway: WatchGateway,
     @Optional() private readonly tournamentService: TournamentService,
@@ -59,9 +64,6 @@ export class GameGateway
 
   async handleConnection(client: Socket) {
     this.logger.log(`Client connected: ${client.id}`);
-
-    // We can't automatically find user games by socketId alone if it's new
-    // but the client can send a request to check by their userId.
     client.emit('connected', { socketId: client.id, message: 'Connected to Chess Gateway' });
   }
 
@@ -96,6 +98,9 @@ export class GameGateway
           turn: game.turn,
           moveHistory: game.moveHistory,
           lastMoveAt: game.lastMoveAt,
+          isBot: game.isBot,
+          botDifficulty: game.botDifficulty,
+          botColor: game.botColor,
         });
       }
     }
@@ -106,17 +111,14 @@ export class GameGateway
     const info = this.connectedClients.get(client.id);
 
     if (info) {
-      // Leave matchmaking queue if in one
       if (info.timeControl && !info.gameId) {
         await this.gameService.leaveQueue(info.userId, info.timeControl);
         this.logger.log(`User ${info.userId} removed from ${info.timeControl} queue`);
       }
 
-      // Handle mid-game disconnect (optional: auto-resign after grace period)
       if (info.gameId) {
         const game = await this.gameService.getGame(info.gameId);
-        if (game && game.status === 'active') {
-          // Notify opponent of disconnect
+        if (game && game.status === 'active' && !game.isBot) {
           client.to(info.gameId).emit('opponent_disconnected', {
             gameId: info.gameId,
             message: 'Opponent disconnected',
@@ -145,7 +147,6 @@ export class GameGateway
       return;
     }
 
-    // Track this client
     this.connectedClients.set(client.id, { userId, username, timeControl });
 
     const entry: MatchmakingEntry = {
@@ -163,10 +164,8 @@ export class GameGateway
     const opponent = await this.gameService.joinQueue(entry);
 
     if (opponent) {
-      // Match found! Create game
       const gameId = this.gameService.generateGameId();
 
-      // Randomly assign colors
       const whiteIsRequester = Math.random() > 0.5;
       const white = whiteIsRequester ? entry : opponent;
       const black = whiteIsRequester ? opponent : entry;
@@ -182,17 +181,14 @@ export class GameGateway
       await this.gameService.setUserCurrentGame(white.userId, gameId);
       await this.gameService.setUserCurrentGame(black.userId, gameId);
 
-      // Update client tracking
       const clientInfo = this.connectedClients.get(client.id);
       if (clientInfo) {
         clientInfo.gameId = gameId;
-        clientInfo.timeControl = undefined; // no longer in queue
+        clientInfo.timeControl = undefined;
       }
 
-      // Both clients join the game room
       await client.join(gameId);
 
-      // Find opponent's socket and join them to the room
       const opponentSocketId = opponent.socketId;
       const opponentSocket = (this.server.sockets as any).get(opponentSocketId);
 
@@ -207,7 +203,6 @@ export class GameGateway
         this.logger.warn(`Opponent socket ${opponentSocketId} not found in this instance`);
       }
 
-      // Prepare GameState for emitting (matching frontend interface)
       const gameStartData = {
         gameId: gameState.id,
         fen: gameState.fen,
@@ -225,14 +220,11 @@ export class GameGateway
         lastMoveAt: gameState.lastMoveAt,
       };
 
-      // Emit game_start to both
       this.server.to(gameId).emit('game_start', gameStartData);
 
       this.logger.log(
         `Game ${gameId} started: ${white.username}(W) vs ${black.username}(B)`,
       );
-    } else {
-      // Added to queue, waiting
     }
   }
 
@@ -245,6 +237,86 @@ export class GameGateway
     const info = this.connectedClients.get(client.id);
     if (info) info.timeControl = undefined;
     client.emit('search_cancelled', { message: 'Search cancelled' });
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // BOT GAME
+  // ──────────────────────────────────────────────────────────────────────
+
+  @SubscribeMessage('start_bot_game')
+  async handleStartBotGame(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: StartBotGameDto,
+  ) {
+    const { userId, username, difficulty, side = 'white', timeControl = 'blitz_5' } = data;
+
+    if (!userId) {
+      client.emit('error', { message: 'userId required' });
+      return;
+    }
+
+    // If user already has an active game, clear it
+    const existingGameId = await this.gameService.getUserCurrentGame(userId);
+    if (existingGameId) {
+      await this.gameService.clearUserCurrentGame(userId);
+    }
+
+    const gameId = this.gameService.generateGameId();
+    const botColor: 'w' | 'b' = side === 'white' ? 'b' : 'w';
+
+    const white = side === 'white'
+      ? { userId, username }
+      : { userId: BOT_USER_ID, username: `${BOT_USERNAME} (${difficulty})` };
+    const black = side === 'white'
+      ? { userId: BOT_USER_ID, username: `${BOT_USERNAME} (${difficulty})` }
+      : { userId, username };
+
+    const gameState = this.gameService.createGameState(
+      gameId,
+      white,
+      black,
+      timeControl,
+    );
+
+    // Mark as bot game
+    gameState.isBot = true;
+    gameState.botDifficulty = difficulty;
+    gameState.botColor = botColor;
+
+    await this.gameService.saveGame(gameState);
+    await this.gameService.setUserCurrentGame(userId, gameId);
+
+    this.connectedClients.set(client.id, { userId, username, gameId });
+    await client.join(gameId);
+
+    const gameStartData = {
+      gameId: gameState.id,
+      fen: gameState.fen,
+      pgn: gameState.pgn,
+      whiteId: gameState.whiteId,
+      blackId: gameState.blackId,
+      whiteUsername: gameState.whiteUsername,
+      blackUsername: gameState.blackUsername,
+      status: gameState.status,
+      timeControl: gameState.timeControl,
+      whiteTimeMs: gameState.whiteTimeMs,
+      blackTimeMs: gameState.blackTimeMs,
+      turn: gameState.turn,
+      moveHistory: gameState.moveHistory,
+      lastMoveAt: gameState.lastMoveAt,
+      isBot: true,
+      botDifficulty: difficulty,
+      botColor,
+    };
+
+    client.emit('bot_game_start', gameStartData);
+
+    // If bot plays white, make the first move
+    if (botColor === 'w') {
+      setTimeout(() => this.triggerBotMove(gameId, client), 600);
+    }
+
+    this.logger.log(`Bot game ${gameId} started for ${username} (difficulty: ${difficulty}, player side: ${side})`);
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -288,6 +360,9 @@ export class GameGateway
       moveHistory: game.moveHistory,
       winner: game.winner,
       lastMoveAt: game.lastMoveAt,
+      isBot: game.isBot,
+      botDifficulty: game.botDifficulty,
+      botColor: game.botColor,
     });
 
     this.logger.log(`User ${username} rejoined game ${gameId}`);
@@ -313,7 +388,6 @@ export class GameGateway
 
     const game = result.game;
 
-    // Broadcast updated state to both players
     const moveUpdate = {
       gameId,
       fen: game.fen,
@@ -327,43 +401,60 @@ export class GameGateway
       winner: game.winner ?? null,
       lastMove: move,
       lastMoveAt: game.lastMoveAt,
+      isBot: game.isBot,
     };
 
     this.server.to(gameId).emit('move_made', moveUpdate);
 
-    // Broadcast to spectators in /watch namespace
     if (this.watchGateway) {
       this.watchGateway.broadcastGameUpdate(gameId, moveUpdate);
     }
 
-    // If game is over, emit game_over
     if (game.status !== 'active') {
-      const gameOverData = {
-        gameId,
-        status: game.status,
-        winner: game.winner,
-        pgn: game.pgn,
-        message: this.getGameOverMessage(game.status, game.winner),
-      };
-      this.server.to(gameId).emit('game_over', gameOverData);
+      await this.handleGameOver(gameId, game, client);
+      return;
+    }
 
-      // Broadcast game over to spectators
-      if (this.watchGateway) {
-        this.watchGateway.broadcastGameOver(gameId, gameOverData);
+    // If this is a bot game and it's now the bot's turn, trigger bot move
+    if (game.isBot && game.turn === game.botColor) {
+      const delay = this.getBotDelay(game.botDifficulty ?? 'medium');
+      setTimeout(() => this.triggerBotMove(gameId, client), delay);
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // POSITION ANALYSIS
+  // ──────────────────────────────────────────────────────────────────────
+
+  @SubscribeMessage('analyze_position')
+  async handleAnalyzePosition(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { fen: string; gameId?: string },
+  ) {
+    try {
+      const { fen } = data;
+      const score = this.aiService.evaluatePosition(fen);
+
+      // Get best move suggestion at depth 4
+      const Chess = (await import('chess.js')).Chess;
+      const chess = new Chess(fen);
+      let bestMove: { from: string; to: string } | null = null;
+
+      if (!chess.isGameOver()) {
+        bestMove = this.aiService.getBestMove(fen, 'hard', chess.turn() as 'w' | 'b');
       }
 
-      // Cleanup user game tracking
-      await this.gameService.clearUserCurrentGame(game.whiteId);
-      await this.gameService.clearUserCurrentGame(game.blackId);
-
-      // Trigger ELO update & broadcast leaderboard
-      await this.triggerLeaderboardUpdate(game);
-
-      // Record tournament result if this is a tournament game
-      await this.recordTournamentGameResult(gameId, game);
-
-      // Persist to Postgres for history
-      await this.gameService.saveGameToDb(gameId);
+      client.emit('position_analysis', {
+        fen,
+        score,         // centipawns, white-positive
+        bestMove,
+        isGameOver: chess.isGameOver(),
+        isCheckmate: chess.isCheckmate(),
+        isDraw: chess.isDraw(),
+      });
+    } catch (err) {
+      this.logger.error('Analysis error:', err);
+      client.emit('position_analysis', { fen: data.fen, score: 0, bestMove: null });
     }
   }
 
@@ -392,21 +483,18 @@ export class GameGateway
     };
     this.server.to(gameId).emit('game_over', resignData);
 
-    // Broadcast resign to spectators
     if (this.watchGateway) {
       this.watchGateway.broadcastGameOver(gameId, resignData);
     }
 
     await this.gameService.clearUserCurrentGame(game.whiteId);
-    await this.gameService.clearUserCurrentGame(game.blackId);
+    if (!game.isBot) await this.gameService.clearUserCurrentGame(game.blackId);
 
-    // Trigger ELO update & broadcast leaderboard
-    await this.triggerLeaderboardUpdate(game);
+    if (!game.isBot) {
+      await this.triggerLeaderboardUpdate(game);
+      await this.recordTournamentGameResult(gameId, game);
+    }
 
-    // Record tournament result
-    await this.recordTournamentGameResult(gameId, game);
-
-    // Persist to Postgres for history
     await this.gameService.saveGameToDb(gameId);
   }
 
@@ -420,25 +508,30 @@ export class GameGateway
     @MessageBody() data: { gameId: string; userId: string },
   ) {
     const { gameId, userId } = data;
+    const game = await this.gameService.getGame(gameId);
+
+    // Bot always declines draw
+    if (game?.isBot) {
+      client.emit('draw_declined', { message: 'The bot declines the draw offer.' });
+      return;
+    }
+
     const drawAccepted = await this.gameService.offerDraw(gameId, userId);
 
     if (drawAccepted) {
-      const game = await this.gameService.acceptDraw(gameId);
-      if (game) {
+      const updatedGame = await this.gameService.acceptDraw(gameId);
+      if (updatedGame) {
         this.server.to(gameId).emit('game_over', {
           gameId,
           status: 'draw',
           winner: 'draw',
           message: 'Draw agreed by both players',
         });
-        await this.gameService.clearUserCurrentGame(game.whiteId);
-        await this.gameService.clearUserCurrentGame(game.blackId);
-
-        // Persist to Postgres
+        await this.gameService.clearUserCurrentGame(updatedGame.whiteId);
+        await this.gameService.clearUserCurrentGame(updatedGame.blackId);
         await this.gameService.saveGameToDb(gameId);
       }
     } else {
-      // Notify opponent of draw offer
       client.to(gameId).emit('draw_offered', {
         gameId,
         fromUserId: userId,
@@ -465,8 +558,6 @@ export class GameGateway
       });
       await this.gameService.clearUserCurrentGame(game.whiteId);
       await this.gameService.clearUserCurrentGame(game.blackId);
-
-      // Persist to Postgres
       await this.gameService.saveGameToDb(gameId);
     }
   }
@@ -501,10 +592,97 @@ export class GameGateway
   }
 
   // ──────────────────────────────────────────────────────────────────────
-  // Helpers
+  // Private Helpers
   // ──────────────────────────────────────────────────────────────────────
 
-  // ── Tournament result recording ────────────────────────────────────────────
+  /** Trigger the AI to make its move in a bot game */
+  private async triggerBotMove(gameId: string, playerClient?: Socket) {
+    const game = await this.gameService.getGame(gameId);
+    if (!game || game.status !== 'active' || !game.isBot) return;
+    if (game.turn !== game.botColor) return;
+
+    const botMove = this.aiService.getBestMove(
+      game.fen,
+      (game.botDifficulty ?? 'medium') as Difficulty,
+      game.botColor!,
+    );
+
+    if (!botMove) {
+      this.logger.warn(`Bot has no legal moves in game ${gameId}`);
+      return;
+    }
+
+    const result = await this.gameService.processMove(
+      gameId,
+      BOT_USER_ID,
+      botMove,
+    );
+
+    if (!result.success || !result.game) {
+      this.logger.error(`Bot move failed in game ${gameId}: ${result.error}`);
+      return;
+    }
+
+    const updatedGame = result.game;
+    const moveUpdate = {
+      gameId,
+      fen: updatedGame.fen,
+      pgn: updatedGame.pgn,
+      move: botMove,
+      moveHistory: updatedGame.moveHistory,
+      turn: updatedGame.turn,
+      whiteTimeMs: updatedGame.whiteTimeMs,
+      blackTimeMs: updatedGame.blackTimeMs,
+      status: updatedGame.status,
+      winner: updatedGame.winner ?? null,
+      lastMove: botMove,
+      lastMoveAt: updatedGame.lastMoveAt,
+      isBot: true,
+      isBotMove: true,
+    };
+
+    this.server.to(gameId).emit('move_made', moveUpdate);
+
+    if (updatedGame.status !== 'active') {
+      await this.handleGameOver(gameId, updatedGame, playerClient);
+    }
+  }
+
+  /** Get thinking delay for bot based on difficulty */
+  private getBotDelay(difficulty: string): number {
+    switch (difficulty) {
+      case 'easy': return 300 + Math.random() * 400;
+      case 'medium': return 500 + Math.random() * 800;
+      case 'hard': return 800 + Math.random() * 1200;
+      default: return 600;
+    }
+  }
+
+  /** Central game-over handler */
+  private async handleGameOver(gameId: string, game: GameState, client?: Socket) {
+    const gameOverData = {
+      gameId,
+      status: game.status,
+      winner: game.winner,
+      pgn: game.pgn,
+      message: this.getGameOverMessage(game.status, game.winner),
+    };
+    this.server.to(gameId).emit('game_over', gameOverData);
+
+    if (this.watchGateway) {
+      this.watchGateway.broadcastGameOver(gameId, gameOverData);
+    }
+
+    await this.gameService.clearUserCurrentGame(game.whiteId);
+    if (!game.isBot) {
+      await this.gameService.clearUserCurrentGame(game.blackId);
+      await this.triggerLeaderboardUpdate(game);
+      await this.recordTournamentGameResult(gameId, game);
+    }
+
+    await this.gameService.saveGameToDb(gameId);
+  }
+
   private async recordTournamentGameResult(gameId: string, game: GameState): Promise<void> {
     if (!this.tournamentService || !this.tournamentGateway) return;
     try {
@@ -532,10 +710,7 @@ export class GameGateway
     }
   }
 
-  private getGameOverMessage(
-    status: string,
-    winner?: string,
-  ): string {
+  private getGameOverMessage(status: string, winner?: string): string {
     switch (status) {
       case 'finished':
         return winner === 'draw'
@@ -550,19 +725,12 @@ export class GameGateway
     }
   }
 
-  /**
-   * Map timeControl string to leaderboard category.
-   */
   private getCategory(timeControl: string): LeaderboardCategory {
     if (timeControl.startsWith('bullet')) return 'bullet';
     if (timeControl.startsWith('rapid')) return 'rapid';
-    return 'blitz'; // default
+    return 'blitz';
   }
 
-  /**
-   * After a game ends, read ELO from Redis and trigger the leaderboard update.
-   * This assumes ELO is stored in player data; falls back to 1200 if missing.
-   */
   private async triggerLeaderboardUpdate(game: GameState): Promise<void> {
     if (!this.leaderboardGateway) return;
     try {
