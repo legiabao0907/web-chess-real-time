@@ -15,8 +15,7 @@ import { DRIZZLE } from '../drizzle/drizzle.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../drizzle/schema/schema';
 import { games } from '../drizzle/schema/game.schema';
-import { users } from '../drizzle/schema/users.schema';
-import { eq, or, desc, aliasedTable } from 'drizzle-orm';
+import { eq, or, desc } from 'drizzle-orm';
 
 const TIME_CONTROLS: Record<string, { baseMs: number; incrementMs: number }> = {
   bullet_1: { baseMs: 60_000, incrementMs: 0 },
@@ -304,13 +303,23 @@ export class GameService {
 
   async saveGameToDb(gameId: string) {
     const game = await this.getGame(gameId);
-    if (!game) return;
+    if (!game) {
+      this.logger.warn(`saveGameToDb: game ${gameId} not found in Redis, cannot persist.`);
+      return;
+    }
 
     try {
-      // Find winnerId if any
+      // BOT_USER_ID ('BOT') is NOT a valid UUID — replace with null for DB FK constraints
+      const isWhiteBot = game.whiteId === BOT_USER_ID;
+      const isBlackBot = game.blackId === BOT_USER_ID;
+
+      const dbWhiteId = isWhiteBot ? null : game.whiteId;
+      const dbBlackId = isBlackBot ? null : game.blackId;
+
+      // Find winnerId if any (null for draws or bot wins)
       let winnerId: string | null = null;
-      if (game.winner === 'white') winnerId = game.whiteId;
-      else if (game.winner === 'black') winnerId = game.blackId;
+      if (game.winner === 'white' && !isWhiteBot) winnerId = game.whiteId;
+      else if (game.winner === 'black' && !isBlackBot) winnerId = game.blackId;
 
       const tournamentGameInfo = await this.redisClient.get(`tournament:game:${gameId}`);
       let tournamentId: string | null = null;
@@ -318,36 +327,46 @@ export class GameService {
         tournamentId = JSON.parse(tournamentGameInfo).tournamentId;
       }
 
+      // Build the status string for the DB — normalise 'resigned' to 'finished'
+      const dbStatus = game.status === 'resigned' ? 'resigned' : game.status;
+
+      this.logger.log(
+        `Persisting game ${gameId}: white=${dbWhiteId}, black=${dbBlackId}, winner=${winnerId}, status=${dbStatus}, isBot=${!!game.isBot}`,
+      );
+
       await (this.db as any).insert(games).values({
         id: game.id,
-        whiteId: game.whiteId,
-        blackId: game.blackId,
+        whiteId: dbWhiteId,
+        blackId: dbBlackId,
+        whiteUsername: game.whiteUsername || 'Unknown',
+        blackUsername: game.blackUsername || 'Unknown',
         winnerId: winnerId,
-        status: game.status,
+        status: dbStatus,
         timeControl: game.timeControl,
-        pgn: game.pgn,
+        pgn: game.pgn || '',
         finalFen: game.fen,
         tournamentId: tournamentId,
         createdAt: new Date(game.createdAt || Date.now()),
-      });
+      }).onConflictDoNothing();
 
-      this.logger.log(`Game ${gameId} persisted to database`);
+      this.logger.log(`✅ Game ${gameId} persisted to database successfully`);
     } catch (error) {
-      this.logger.error(`Failed to persist game ${gameId} to database`, error);
+      this.logger.error(
+        `❌ Failed to persist game ${gameId} to database: ${(error as Error)?.message}`,
+        (error as Error)?.stack,
+      );
     }
   }
 
   async getGameHistory(userId: string) {
-    const whitePlayer = aliasedTable(users, 'whitePlayer');
-    const blackPlayer = aliasedTable(users, 'blackPlayer');
-
     return this.db
       .select({
         id: games.id,
         whiteId: games.whiteId,
         blackId: games.blackId,
-        whiteUsername: whitePlayer.username,
-        blackUsername: blackPlayer.username,
+        // Prefer the stored username; fall back to the joined user table
+        whiteUsername: games.whiteUsername,
+        blackUsername: games.blackUsername,
         winnerId: games.winnerId,
         status: games.status,
         timeControl: games.timeControl,
@@ -356,8 +375,6 @@ export class GameService {
         createdAt: games.createdAt,
       })
       .from(games)
-      .leftJoin(whitePlayer, eq(games.whiteId, whitePlayer.id))
-      .leftJoin(blackPlayer, eq(games.blackId, blackPlayer.id))
       .where(or(eq(games.whiteId, userId), eq(games.blackId, userId)))
       .orderBy(desc(games.createdAt));
   }

@@ -6,6 +6,8 @@ export const games = pgTable('games', {
   id: uuid('id').primaryKey().defaultRandom(),
   whiteId: uuid('white_id').references(() => users.id),
   blackId: uuid('black_id').references(() => users.id),
+  whiteUsername: varchar('white_username', { length: 255 }),
+  blackUsername: varchar('black_username', { length: 255 }),
   winnerId: uuid('winner_id').references(() => users.id),
   status: varchar('status', { length: 50 }),
   timeControl: varchar('time_control', { length: 50 }),
@@ -13,4 +15,4 @@ export const games = pgTable('games', {
   finalFen: text('final_fen'),
   tournamentId: uuid('tournament_id').references(() => tournaments.id),
   createdAt: timestamp('created_at').defaultNow(),
-});
+});

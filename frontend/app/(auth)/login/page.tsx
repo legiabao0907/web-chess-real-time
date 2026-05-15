@@ -38,7 +38,7 @@ export default function LoginPage() {
       saveUser(data.user);
       setSuccess(true);
       // Chuyển về trang dashboard home sau khi login thành công
-      setTimeout(() => router.push("/home"), 500);
+      setTimeout(() => { window.location.href = "/home"; }, 500);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Đăng nhập thất bại");
     } finally {

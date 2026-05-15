@@ -34,6 +34,7 @@ export default function ArchivesPage() {
           headers: {
             Authorization: `Bearer ${token}`,
           },
+          cache: "no-store",
         });
         if (res.ok) {
           const data = await res.json();
@@ -50,8 +51,8 @@ export default function ArchivesPage() {
   }, []);
 
   const filteredGames = games.filter(g =>
-    g.whiteUsername.toLowerCase().includes(search.toLowerCase()) ||
-    g.blackUsername.toLowerCase().includes(search.toLowerCase())
+    (g.whiteUsername ?? '').toLowerCase().includes(search.toLowerCase()) ||
+    (g.blackUsername ?? '').toLowerCase().includes(search.toLowerCase())
   );
 
   const formatDate = (dateStr: string) => {

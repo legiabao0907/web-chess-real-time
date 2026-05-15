@@ -168,6 +168,9 @@ export default function PlayBotPage() {
   }
 
   function handleNewGame() {
+    if (game && game.status === "active") {
+      actions.resign(game.gameId);
+    }
     actions.clearGame();
     setSetupDone(false);
     setViewIndex(-1);
