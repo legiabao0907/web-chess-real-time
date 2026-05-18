@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { History, Swords, Calendar, Clock, Trophy, ExternalLink, Search } from "lucide-react";
+import { History, Swords, Calendar, Clock, Trophy, ExternalLink, Search, Bot } from "lucide-react";
 import { getUser } from "@/lib/auth";
+import { useRouter } from "next/navigation";
 
 interface GameHistory {
   id: string;
@@ -18,13 +19,14 @@ interface GameHistory {
   createdAt: string;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8080";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api";
 
 export default function ArchivesPage() {
   const [games, setGames] = useState<GameHistory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
   const user = getUser();
+  const router = useRouter();
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -118,7 +120,8 @@ export default function ArchivesPage() {
           {filteredGames.map((game) => {
             const isWhite = game.whiteId === user?.id;
             const isWinner = game.winnerId === user?.id;
-            const isDraw = game.status === "draw";
+            const isDraw = game.status === "draw" || (game.winnerId === null && game.status === "finished");
+            const isBot = game.whiteId === null || game.blackId === null;
 
             return (
               <div
@@ -169,6 +172,11 @@ export default function ArchivesPage() {
                       }}>
                         {game.timeControl.toUpperCase()}
                       </div>
+                      {isBot && (
+                        <div style={{ display: "flex", alignItems: "center", gap: "3px", fontSize: "0.6rem", color: "rgba(168,85,247,0.7)", fontWeight: 700 }}>
+                          <Bot size={10} /> BOT
+                        </div>
+                      )}
                     </div>
                     <div style={{ textAlign: "left", flex: 1 }}>
                       <span style={{ fontWeight: 600, color: !isWhite ? "#a855f7" : "white" }}>{game.blackUsername}</span>
@@ -195,18 +203,24 @@ export default function ArchivesPage() {
                     )}
                   </div>
 
-                  <button style={{
-                    background: "rgba(255,255,255,0.05)",
-                    border: "1px solid rgba(255,255,255,0.1)",
+                  <button
+                    onClick={() => router.push(`/archives/${game.id}`)}
+                    style={{
+                    background: "rgba(168,85,247,0.1)",
+                    border: "1px solid rgba(168,85,247,0.25)",
                     borderRadius: "8px",
-                    padding: "8px 12px",
-                    color: "white",
+                    padding: "8px 14px",
+                    color: "#a855f7",
                     display: "flex",
                     alignItems: "center",
                     gap: "6px",
                     fontSize: "0.8rem",
                     cursor: "pointer",
-                  }}>
+                    transition: "all 0.2s",
+                  }}
+                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(168,85,247,0.2)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(168,85,247,0.1)"; }}
+                  >
                     <ExternalLink size={14} /> View
                   </button>
                 </div>
@@ -216,7 +230,7 @@ export default function ArchivesPage() {
         </div>
       )}
 
-      <style jsx>{`
+      <style>{`
         .pp-spin {
           animation: spin 1s linear infinite;
         }

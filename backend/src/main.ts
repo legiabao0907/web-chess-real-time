@@ -7,7 +7,7 @@ async function bootstrap() {
 
   // Bật CORS để Next.js frontend (port 3000) có thể gọi API
   app.enableCors({
-    origin: process.env.FRONTEND_URL ?? 'http://localhost:3000',
+    origin: true, // Cho phép mọi origin (localhost, IP) gọi API
     credentials: true,
   });
 

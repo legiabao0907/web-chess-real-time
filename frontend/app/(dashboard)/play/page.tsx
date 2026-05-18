@@ -70,11 +70,18 @@ export default function PlayPage() {
     if (!game || game.status !== "active" || !game.lastMoveAt) return;
     const interval = setInterval(() => {
       const elapsed = Date.now() - game.lastMoveAt!;
-      if (game.turn === "w") setWhiteClock(Math.max(0, game.whiteTimeMs - elapsed));
-      else setBlackClock(Math.max(0, game.blackTimeMs - elapsed));
+      if (game.turn === "w") {
+        const remaining = Math.max(0, game.whiteTimeMs - elapsed);
+        setWhiteClock(remaining);
+        if (remaining === 0) actions.claimTimeout(game.gameId);
+      } else {
+        const remaining = Math.max(0, game.blackTimeMs - elapsed);
+        setBlackClock(remaining);
+        if (remaining === 0) actions.claimTimeout(game.gameId);
+      }
     }, 100);
     return () => clearInterval(interval);
-  }, [game?.turn, game?.status, game?.lastMoveAt, game?.whiteTimeMs, game?.blackTimeMs]);
+  }, [game?.turn, game?.status, game?.lastMoveAt, game?.whiteTimeMs, game?.blackTimeMs, game?.gameId]);
 
   // Auto-scroll move history
   useEffect(() => {

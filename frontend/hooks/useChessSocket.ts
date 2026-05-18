@@ -290,6 +290,14 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
     []
   );
 
+  const claimTimeout = useCallback(
+    (gameId: string) => {
+      if (!socketRef.current?.connected) return;
+      socketRef.current.emit("claim_timeout", { gameId, userId });
+    },
+    [userId]
+  );
+
   const clearGame = useCallback(() => {
     setGame(null);
     setGameStatus("idle");
@@ -320,6 +328,7 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
       sendMessage,
       startBotGame,
       analyzePosition,
+      claimTimeout,
       clearGame,
     },
   };

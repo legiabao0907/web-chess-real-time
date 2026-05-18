@@ -15,7 +15,7 @@ import { LeaderboardCategory } from './dto/leaderboard.dto';
 
 @WebSocketGateway({
   cors: {
-    origin: process.env.FRONTEND_URL ?? 'http://localhost:3000',
+    origin: true,
     credentials: true,
   },
   namespace: '/leaderboard',

@@ -1,4 +1,4 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
+import { Injectable, Inject, Logger, OnModuleInit } from '@nestjs/common';
 import Redis from 'ioredis';
 import { Chess } from 'chess.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -28,14 +28,90 @@ const TIME_CONTROLS: Record<string, { baseMs: number; incrementMs: number }> = {
   rapid_15_10: { baseMs: 15 * 60_000, incrementMs: 10_000 },
 };
 
+// ── Lua script: atomically dequeue an opponent OR enqueue self ──────────────
+// KEYS[1] = queue key (e.g. chess:queue:blitz_5)
+// ARGV[1] = current userId
+// ARGV[2] = JSON string of MatchmakingEntry to push if no opponent found
+//
+// Returns:
+//   "MATCHED:<raw JSON of opponent>"  — found an opponent, current user NOT added to queue
+//   "QUEUED"                          — no opponent yet, current user added to queue
+//   "ALREADY_QUEUED"                  — user was already in queue (socketId updated)
+const JOIN_QUEUE_LUA = `
+local key    = KEYS[1]
+local uid    = ARGV[1]
+local entry  = ARGV[2]
+
+-- Step 1: scan the list for an existing entry by this user
+local len = redis.call('LLEN', key)
+for i = 0, len - 1 do
+  local raw = redis.call('LINDEX', key, i)
+  local decoded = cjson.decode(raw)
+  if decoded.userId == uid then
+    -- Already in queue — remove old entry, re-add updated one (new socketId), stop scan
+    redis.call('LREM', key, 1, raw)
+    redis.call('RPUSH', key, entry)
+    redis.call('EXPIRE', key, 300)
+    return 'ALREADY_QUEUED'
+  end
+end
+
+-- Step 2: not in queue — try to pop an opponent from the front
+local head = redis.call('LPOP', key)
+if head then
+  local opponent = cjson.decode(head)
+  if opponent.userId ~= uid then
+    -- Valid match found: return opponent JSON, do NOT push current user
+    return 'MATCHED:' .. head
+  end
+  -- Edge case: somehow same user at front — put them back
+  redis.call('LPUSH', key, head)
+end
+
+-- Step 3: no opponent — join the queue
+redis.call('RPUSH', key, entry)
+redis.call('EXPIRE', key, 300)
+return 'QUEUED'
+`;
+
+// ── Lua script: atomically remove a user from the queue ──────────────────────
+// KEYS[1] = queue key
+// ARGV[1] = userId to remove
+// Returns number of entries removed (0 or 1)
+const LEAVE_QUEUE_LUA = `
+local key = KEYS[1]
+local uid = ARGV[1]
+local len = redis.call('LLEN', key)
+for i = 0, len - 1 do
+  local raw = redis.call('LINDEX', key, i)
+  local decoded = cjson.decode(raw)
+  if decoded.userId == uid then
+    redis.call('LREM', key, 1, raw)
+    return 1
+  end
+end
+return 0
+`;
+
 @Injectable()
-export class GameService {
+export class GameService implements OnModuleInit {
   private readonly logger = new Logger(GameService.name);
+
+  // Cached SHA1 digests for EVALSHA (faster than EVAL after first load)
+  private joinQueueSha: string;
+  private leaveQueueSha: string;
 
   constructor(
     @Inject(REDIS_CLIENT) private readonly redisClient: Redis,
     @Inject(DRIZZLE) private readonly db: NodePgDatabase<typeof schema>,
   ) { }
+
+  /** Pre-load Lua scripts into Redis on startup so we can use EVALSHA */
+  async onModuleInit() {
+    this.joinQueueSha  = await this.redisClient.script('LOAD', JOIN_QUEUE_LUA)  as string;
+    this.leaveQueueSha = await this.redisClient.script('LOAD', LEAVE_QUEUE_LUA) as string;
+    this.logger.log('✅ Matchmaking Lua scripts loaded into Redis');
+  }
 
   // ──────────────────────────────────────────────────────────────────────
   // Redis helpers
@@ -87,51 +163,74 @@ export class GameService {
   // Matchmaking queue
   // ──────────────────────────────────────────────────────────────────────
 
+  /**
+   * Atomic matchmaking via Lua script.
+   *
+   * Replaces the old multi-step (lrange → lrem → lpop → rpush) sequence
+   * that suffered from race conditions when two players joined simultaneously.
+   *
+   * The Lua script runs entirely inside the Redis server as a single atomic
+   * operation — no other command can interleave between steps.
+   *
+   * Returns the matched opponent's MatchmakingEntry, or null if queued.
+   */
   async joinQueue(entry: MatchmakingEntry): Promise<MatchmakingEntry | null> {
     const key = this.matchmakingKey(entry.timeControl);
+    const entryJson = JSON.stringify(entry);
 
-    // Check if already in queue for this time control
-    const existing = await this.redisClient.lrange(key, 0, -1);
-    let alreadyQueued = false;
-    for (const raw of existing) {
-      const e = JSON.parse(raw) as MatchmakingEntry;
-      if (e.userId === entry.userId) {
-        // Already queued. Important: Always remove the old entry before adding the new one
-        // to update socketId and keep user at the end of the queue (or keep position)
-        await this.redisClient.lrem(key, 1, raw);
-        alreadyQueued = true;
-        break;
-      }
+    let result: string;
+    try {
+      // Use EVALSHA (cached script) for speed; fall back to EVAL if script was evicted
+      result = await this.redisClient.evalsha(
+        this.joinQueueSha,
+        1,          // numkeys
+        key,        // KEYS[1]
+        entry.userId, // ARGV[1]
+        entryJson,  // ARGV[2]
+      ) as string;
+    } catch (err: unknown) {
+      const isNoScript = err instanceof Error && err.message.startsWith('NOSCRIPT');
+      if (!isNoScript) throw err;
+      // Script was flushed from Redis — reload and retry
+      this.joinQueueSha = await this.redisClient.script('LOAD', JOIN_QUEUE_LUA) as string;
+      result = await this.redisClient.evalsha(
+        this.joinQueueSha,
+        1,
+        key,
+        entry.userId,
+        entryJson,
+      ) as string;
     }
 
-    // Look for an opponent
-    if (!alreadyQueued) {
-      const raw = await this.redisClient.lpop(key);
-      if (raw) {
-        const opponent = JSON.parse(raw) as MatchmakingEntry;
-        if (opponent.userId !== entry.userId) {
-          return opponent; // Found an opponent!
-        }
-        // Same user somehow, re-add (though lrange should prevent this)
-        await this.redisClient.rpush(key, raw);
-      }
+    if (result.startsWith('MATCHED:')) {
+      const opponentJson = result.slice('MATCHED:'.length);
+      this.logger.log(`⚡ Lua matchmaking: ${entry.userId} matched an opponent`);
+      return JSON.parse(opponentJson) as MatchmakingEntry;
     }
 
-    // No opponent found OR we updated our socketId - add to queue
-    await this.redisClient.rpush(key, JSON.stringify(entry));
-    await this.redisClient.expire(key, 300); // 5 min TTL for queue entries
+    // 'QUEUED' or 'ALREADY_QUEUED'
+    this.logger.log(`🕐 Lua matchmaking: ${entry.userId} → ${result} (${entry.timeControl})`);
     return null;
   }
 
+  /**
+   * Atomic queue removal via Lua script.
+   * Ensures the player is removed in one step without any read-modify-write gap.
+   */
   async leaveQueue(userId: string, timeControl: string) {
     const key = this.matchmakingKey(timeControl);
-    const existing = await this.redisClient.lrange(key, 0, -1);
-    for (const raw of existing) {
-      const e = JSON.parse(raw) as MatchmakingEntry;
-      if (e.userId === userId) {
-        await this.redisClient.lrem(key, 1, raw);
-        break;
-      }
+    try {
+      await this.redisClient.evalsha(
+        this.leaveQueueSha,
+        1,
+        key,
+        userId,
+      );
+    } catch (err: unknown) {
+      const isNoScript = err instanceof Error && err.message.startsWith('NOSCRIPT');
+      if (!isNoScript) throw err;
+      this.leaveQueueSha = await this.redisClient.script('LOAD', LEAVE_QUEUE_LUA) as string;
+      await this.redisClient.evalsha(this.leaveQueueSha, 1, key, userId);
     }
   }
 
@@ -206,18 +305,18 @@ export class GameService {
       if (isWhiteTurn) {
         game.whiteTimeMs = Math.max(0, game.whiteTimeMs - elapsed) + tc.incrementMs;
         if (game.whiteTimeMs <= 0) {
+          game.whiteTimeMs = 0;
           game.status = 'finished';
           game.winner = 'black';
-          await this.saveGame(game);
-          return { success: true, game };
+          // Fall through — gateway will see status !== 'active' and handle game over
         }
       } else {
         game.blackTimeMs = Math.max(0, game.blackTimeMs - elapsed) + tc.incrementMs;
         if (game.blackTimeMs <= 0) {
+          game.blackTimeMs = 0;
           game.status = 'finished';
           game.winner = 'white';
-          await this.saveGame(game);
-          return { success: true, game };
+          // Fall through — gateway will see status !== 'active' and handle game over
         }
       }
     }
@@ -364,7 +463,6 @@ export class GameService {
         id: games.id,
         whiteId: games.whiteId,
         blackId: games.blackId,
-        // Prefer the stored username; fall back to the joined user table
         whiteUsername: games.whiteUsername,
         blackUsername: games.blackUsername,
         winnerId: games.winnerId,
@@ -377,5 +475,27 @@ export class GameService {
       .from(games)
       .where(or(eq(games.whiteId, userId), eq(games.blackId, userId)))
       .orderBy(desc(games.createdAt));
+  }
+
+  async getGameById(gameId: string) {
+    const result = await this.db
+      .select({
+        id: games.id,
+        whiteId: games.whiteId,
+        blackId: games.blackId,
+        whiteUsername: games.whiteUsername,
+        blackUsername: games.blackUsername,
+        winnerId: games.winnerId,
+        status: games.status,
+        timeControl: games.timeControl,
+        pgn: games.pgn,
+        finalFen: games.finalFen,
+        createdAt: games.createdAt,
+        tournamentId: games.tournamentId,
+      })
+      .from(games)
+      .where(eq(games.id, gameId))
+      .limit(1);
+    return result[0] ?? null;
   }
 }

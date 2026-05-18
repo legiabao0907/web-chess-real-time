@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -24,6 +24,7 @@ import ProfilePanel from "@/components/common/ProfilePanel";
 import ChatDrawer from "@/components/common/ChatDrawer";
 import { useChatStore, useTotalUnread } from "@/store/useChatStore";
 import { useFriendChat } from "@/hooks/useFriendChat";
+import ClientOnly from "@/components/common/ClientOnly";
 
 export default function DashboardLayout({
   children,
@@ -34,18 +35,21 @@ export default function DashboardLayout({
   const { openProfile, profile, loadProfile } = useProfileStore();
   const { openChat } = useChatStore();
   const totalUnread = useTotalUnread();
-  const user = getUser();
+
+  // Use state to avoid SSR/client hydration mismatch (localStorage only available client-side)
+  const [clientUser, setClientUser] = useState<ReturnType<typeof getUser>>(null);
 
   // Initialize friend chat socket connection for the whole dashboard session
   useFriendChat({
-    userId: user?.id ?? '',
-    username: user?.username ?? '',
-    enabled: !!user?.id,
+    userId: clientUser?.id ?? '',
+    username: clientUser?.username ?? '',
+    enabled: !!clientUser?.id,
   });
 
-  // Load profile data on mount from localStorage
+  // Load profile data on mount from localStorage (client-only)
   useEffect(() => {
     const localUser = getUser();
+    setClientUser(localUser);
     if (localUser && !profile) {
       loadProfile();
     }
@@ -58,7 +62,7 @@ export default function DashboardLayout({
     router.refresh();
   };
 
-  const displayUser = profile ?? getUser();
+  const displayUser = profile ?? clientUser;
 
   return (
     <>
@@ -79,7 +83,9 @@ export default function DashboardLayout({
             <div className="sidebar-header">
               <p className="sidebar-subtitle">The Sanctuary</p>
               <p className="sidebar-title">
-                {displayUser ? displayUser.username.toUpperCase() : "GRANDMASTER"} STATUS
+                <ClientOnly fallback="GRANDMASTER STATUS">
+                  {displayUser ? displayUser.username.toUpperCase() : "GRANDMASTER"} STATUS
+                </ClientOnly>
               </p>
             </div>
 
@@ -207,7 +213,9 @@ export default function DashboardLayout({
             <div className="header-right">
               <div className="elo-badge">
                 <span className="elo-label">ELO </span>
-                <span className="elo-value">{displayUser?.eloBlitz || 1200}</span>
+                <ClientOnly fallback={<span className="elo-value">1200</span>}>
+                  <span className="elo-value">{displayUser?.eloBlitz || 1200}</span>
+                </ClientOnly>
               </div>
 
               <button className="bell-btn">
@@ -223,11 +231,13 @@ export default function DashboardLayout({
                 title="View Profile"
               >
                 <div className="avatar-inner">
-                  {displayUser?.avatarUrl ? (
-                    <img src={displayUser.avatarUrl} alt="User" />
-                  ) : (
-                    <User size={24} color="#a855f7" />
-                  )}
+                  <ClientOnly fallback={<User size={24} color="#a855f7" />}>
+                    {displayUser?.avatarUrl ? (
+                      <img src={displayUser.avatarUrl} alt="User" />
+                    ) : (
+                      <User size={24} color="#a855f7" />
+                    )}
+                  </ClientOnly>
                 </div>
               </button>
             </div>

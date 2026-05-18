@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
   // accessToken cookie — đọc bởi middleware để bảo vệ route
   response.cookies.set('accessToken', body.accessToken, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: false, // Tạm thời để false để test qua IP (HTTP) thay vì chỉ localhost
     sameSite: 'lax',
     maxAge: 60 * 15, // 15 phút (khớp với JWT_ACCESS_EXPIRES_IN)
     path: '/',
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
   if (body.refreshToken) {
     response.cookies.set('refreshToken', body.refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: false, // Tạm thời để false để test qua IP (HTTP) thay vì chỉ localhost
       sameSite: 'lax',
       maxAge: 60 * 60 * 24 * 7, // 7 ngày
       path: '/',

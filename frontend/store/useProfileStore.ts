@@ -26,7 +26,7 @@ export interface UserProfile extends AuthUser {
 interface ProfileState {
   // Panel visibility
   isOpen: boolean;
-  activeTab: 'overview' | 'dashboard' | 'edit' | 'friends';
+  activeTab: 'overview' | 'dashboard' | 'edit' | 'friends' | 'history';
 
   // Profile data
   profile: UserProfile | null;

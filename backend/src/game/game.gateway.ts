@@ -30,7 +30,7 @@ import { AiService, Difficulty } from '../ai/ai.service';
 
 @WebSocketGateway({
   cors: {
-    origin: process.env.FRONTEND_URL ?? 'http://localhost:3000',
+    origin: true,
     credentials: true,
   },
   namespace: '/chess',
@@ -487,6 +487,10 @@ export class GameGateway
       this.watchGateway.broadcastGameOver(gameId, resignData);
     }
 
+    // Persist to DB FIRST before clearing Redis
+    this.logger.log(`[handleResign] Saving resigned game ${gameId} to DB. Winner: ${game.winner}`);
+    await this.gameService.saveGameToDb(gameId);
+
     await this.gameService.clearUserCurrentGame(game.whiteId);
     if (!game.isBot) await this.gameService.clearUserCurrentGame(game.blackId);
 
@@ -494,8 +498,59 @@ export class GameGateway
       await this.triggerLeaderboardUpdate(game);
       await this.recordTournamentGameResult(gameId, game);
     }
+  }
 
-    await this.gameService.saveGameToDb(gameId);
+  // ──────────────────────────────────────────────────────────────────────
+  // CLAIM TIMEOUT (frontend clock hit 0)
+  // ──────────────────────────────────────────────────────────────────────
+
+  @SubscribeMessage('claim_timeout')
+  async handleClaimTimeout(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { gameId: string; userId: string },
+  ) {
+    const { gameId, userId } = data;
+    const game = await this.gameService.getGame(gameId);
+
+    if (!game || game.status !== 'active') return;
+
+    // Verify the claimer is a player in this game
+    if (game.whiteId !== userId && game.blackId !== userId) return;
+
+    const now = Date.now();
+    const elapsed = game.lastMoveAt ? now - game.lastMoveAt : 0;
+
+    // Determine whose clock is out: the side whose turn it is has been running
+    const isWhiteTurn = game.turn === 'w';
+
+    let loserColor: 'white' | 'black';
+    let winner: 'white' | 'black';
+
+    if (isWhiteTurn) {
+      const remainingWhite = game.whiteTimeMs - elapsed;
+      if (remainingWhite > 2000) {
+        // More than 2 seconds left — bogus claim, ignore
+        return;
+      }
+      loserColor = 'white';
+      winner = 'black';
+      game.whiteTimeMs = 0;
+    } else {
+      const remainingBlack = game.blackTimeMs - elapsed;
+      if (remainingBlack > 2000) {
+        return;
+      }
+      loserColor = 'black';
+      winner = 'white';
+      game.blackTimeMs = 0;
+    }
+
+    game.status = 'finished';
+    game.winner = winner;
+    await this.gameService.saveGame(game);
+
+    this.logger.log(`Game ${gameId}: ${loserColor} flagged on time. Winner: ${winner}`);
+    await this.handleGameOver(gameId, game, client);
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -673,14 +728,17 @@ export class GameGateway
       this.watchGateway.broadcastGameOver(gameId, gameOverData);
     }
 
+    // Persist to DB FIRST (before clearing Redis keys so data is still available)
+    this.logger.log(`[handleGameOver] Saving game ${gameId} to DB. Status: ${game.status}, Winner: ${game.winner}`);
+    await this.gameService.saveGameToDb(gameId);
+
+    // Then clean up Redis user-game mappings
     await this.gameService.clearUserCurrentGame(game.whiteId);
     if (!game.isBot) {
       await this.gameService.clearUserCurrentGame(game.blackId);
       await this.triggerLeaderboardUpdate(game);
       await this.recordTournamentGameResult(gameId, game);
     }
-
-    await this.gameService.saveGameToDb(gameId);
   }
 
   private async recordTournamentGameResult(gameId: string, game: GameState): Promise<void> {

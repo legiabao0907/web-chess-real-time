@@ -444,7 +444,7 @@ function HistoryTab() {
   React.useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8080";
+        const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api";
         const token = localStorage.getItem("accessToken");
         const res = await fetch(`${API_URL}/game/history`, {
           headers: { Authorization: `Bearer ${token}` },

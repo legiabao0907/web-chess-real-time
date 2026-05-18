@@ -15,7 +15,7 @@ import { JoinRoomDto, SendDmDto, GetHistoryDto } from './dto/chat.dto';
 
 @WebSocketGateway({
   cors: {
-    origin: process.env.FRONTEND_URL ?? 'http://localhost:3000',
+    origin: true,
     credentials: true,
   },
   namespace: '/chat',
