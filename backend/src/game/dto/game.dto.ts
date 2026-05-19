@@ -1,4 +1,19 @@
 // DTO cho chess game events
+
+/** Verbose move object from chess.js `history({ verbose: true })` */
+export interface VerboseMove {
+  color: 'w' | 'b';
+  from: string;
+  to: string;
+  piece: string;
+  captured?: string;
+  promotion?: string;
+  flags: string;
+  san: string;
+  lan?: string;
+  before: string;
+  after: string;
+}
 export interface JoinGameDto {
   gameId: string;
   userId: string;
@@ -47,6 +62,7 @@ export interface GameState {
   lastMoveAt?: number;
   winner?: 'white' | 'black' | 'draw';
   moveHistory: string[];
+  verboseMoves: VerboseMove[];  // full verbose history for replay
   createdAt: number;
   // Bot game fields
   isBot?: boolean;

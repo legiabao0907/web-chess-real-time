@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { REDIS_CLIENT } from '../redis/redis.module';
 import {
   GameState,
+  VerboseMove,
   MatchmakingEntry,
   CreateGameDto,
   JoinGameDto,
@@ -262,6 +263,7 @@ export class GameService implements OnModuleInit {
       turn: 'w',
       lastMoveAt: Date.now(),
       moveHistory: [],
+      verboseMoves: [],
       createdAt: Date.now(),
     };
   }
@@ -322,7 +324,25 @@ export class GameService implements OnModuleInit {
     }
 
     // Chess.js validation
-    const chess = new Chess(game.fen);
+    // Priority order:
+    //  1. Rebuild move-by-move from verboseMoves (most accurate, keeps PGN intact)
+    //  2. Load from stored PGN (legacy games that have pgn but no verboseMoves)
+    //  3. Last resort: load from FEN (loses full PGN history)
+    const chess = new Chess();
+    if (game.verboseMoves && game.verboseMoves.length > 0) {
+      for (const vm of game.verboseMoves) {
+        chess.move({ from: vm.from, to: vm.to, promotion: vm.promotion });
+      }
+    } else if (game.pgn) {
+      try {
+        chess.loadPgn(game.pgn);
+      } catch {
+        chess.load(game.fen);
+      }
+    } else {
+      chess.load(game.fen);
+    }
+
     try {
       const result = chess.move({
         from: move.from,
@@ -332,11 +352,27 @@ export class GameService implements OnModuleInit {
 
       if (!result) return { success: false, error: 'Illegal move' };
 
+      // Capture the verbose move detail
+      const verboseResult: VerboseMove = {
+        color: result.color as 'w' | 'b',
+        from: result.from,
+        to: result.to,
+        piece: result.piece,
+        captured: result.captured,
+        promotion: result.promotion,
+        flags: result.flags,
+        san: result.san,
+        lan: result.lan,
+        before: result.before,
+        after: result.after,
+      };
+
       game.fen = chess.fen();
       game.pgn = chess.pgn();
       game.turn = chess.turn() as 'w' | 'b';
       game.lastMoveAt = now;
       game.moveHistory.push(result.san);
+      game.verboseMoves = [...(game.verboseMoves ?? []), verboseResult];
 
       // Check game over
       if (chess.isGameOver()) {
@@ -444,6 +480,7 @@ export class GameService implements OnModuleInit {
         timeControl: game.timeControl,
         pgn: game.pgn || '',
         finalFen: game.fen,
+        moves: game.verboseMoves ?? [],   // ← persist full verbose move list
         tournamentId: tournamentId,
         createdAt: new Date(game.createdAt || Date.now()),
       }).onConflictDoNothing();
@@ -490,6 +527,7 @@ export class GameService implements OnModuleInit {
         timeControl: games.timeControl,
         pgn: games.pgn,
         finalFen: games.finalFen,
+        moves: games.moves,
         createdAt: games.createdAt,
         tournamentId: games.tournamentId,
       })
@@ -497,5 +535,41 @@ export class GameService implements OnModuleInit {
       .where(eq(games.id, gameId))
       .limit(1);
     return result[0] ?? null;
+  }
+
+  /**
+   * Returns the verbose move list for replay.
+   * Priority:
+   *   1. moves JSONB column (new games).
+   *   2. Reconstruct from PGN (legacy games saved before the moves column existed).
+   */
+  async getGameMoveHistory(gameId: string): Promise<VerboseMove[]> {
+    const result = await this.db
+      .select({ moves: games.moves, pgn: games.pgn })
+      .from(games)
+      .where(eq(games.id, gameId))
+      .limit(1);
+
+    if (!result[0]) return [];
+
+    // --- Path 1: moves column already populated --------------------------
+    const stored = result[0].moves as VerboseMove[] | null;
+    if (stored && Array.isArray(stored) && stored.length > 0) {
+      return stored;
+    }
+
+    // --- Path 2: fallback — reconstruct verbose moves from PGN -----------
+    const pgn = result[0].pgn;
+    if (!pgn) return [];
+
+    try {
+      const chess = new Chess();
+      chess.loadPgn(pgn);
+      // chess.js history({ verbose: true }) returns the same shape as VerboseMove
+      return chess.history({ verbose: true }) as unknown as VerboseMove[];
+    } catch (err) {
+      this.logger.warn(`getGameMoveHistory: PGN parse failed for game ${gameId}: ${(err as Error).message}`);
+      return [];
+    }
   }
 }

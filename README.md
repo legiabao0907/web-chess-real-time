@@ -114,3 +114,210 @@ sequenceDiagram
     GW->>Svc: clearUserCurrentGame(blackId)
     GW->>Redis: Xoá game khỏi Redis (Sau 1 khoảng TTL)
 ```
+
+---
+
+## 4. Luồng Đăng Nhập (Login)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant AuthCtrl as AuthController
+    participant AuthSvc as AuthService
+    participant DB as Postgres (Drizzle)
+
+    C->>AuthCtrl: POST /auth/login {email, password}
+    AuthCtrl->>AuthSvc: validateUser(email, password)
+    AuthSvc->>DB: SELECT * FROM users WHERE email = ?
+    DB-->>AuthSvc: return user record
+    
+    alt User không tồn tại hoặc sai mật khẩu
+        AuthSvc-->>AuthCtrl: throw UnauthorizedException
+        AuthCtrl-->>C: return 401 Unauthorized
+    else Hợp lệ
+        AuthSvc->>AuthSvc: verify password (bcrypt)
+        AuthSvc->>AuthSvc: generate JWT Token
+        AuthSvc-->>AuthCtrl: return { access_token, user }
+        AuthCtrl-->>C: return 200 OK + Token
+    end
+```
+
+---
+
+## 5. Luồng Đăng Kí (Register)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant AuthCtrl as AuthController
+    participant AuthSvc as AuthService
+    participant DB as Postgres (Drizzle)
+
+    C->>AuthCtrl: POST /auth/register {email, username, password}
+    AuthCtrl->>AuthSvc: register(data)
+    AuthSvc->>DB: Kiểm tra email/username đã tồn tại chưa
+    DB-->>AuthSvc: return result
+    
+    alt Đã tồn tại
+        AuthSvc-->>AuthCtrl: throw ConflictException
+        AuthCtrl-->>C: return 409 Conflict
+    else Hợp lệ
+        AuthSvc->>AuthSvc: hash password (bcrypt)
+        AuthSvc->>DB: INSERT INTO users
+        DB-->>AuthSvc: return new user
+        AuthSvc-->>AuthCtrl: return success
+        AuthCtrl-->>C: return 201 Created
+    end
+```
+
+---
+
+## 6. Luồng Xem Trận Đấu (Spectator / Watch)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client (Spectator)
+    participant W as WatchGateway
+    participant Redis as Redis
+    
+    C->>W: emit('watch_game', { gameId })
+    W->>Redis: Kiểm tra gameId có đang active không
+    Redis-->>W: return gameState
+    
+    alt Game không tồn tại / đã kết thúc
+        W-->>C: emit('error', 'Game not found')
+    else Game đang active
+        W->>W: Socket Join Room (gameId)
+        W-->>C: emit('game_state', gameState)
+    end
+    
+    Note over C,W: Khi có người chơi đánh cờ, GameGateway sẽ gọi broadcastGameUpdate()
+```
+
+---
+
+## 7. Luồng Chat Trong Trận Đấu
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C1 as Client 1
+    participant C2 as Client 2 (Cùng Room)
+    participant ChatGW as ChatGateway
+    participant ChatSvc as ChatService
+    participant DB as Postgres (Drizzle)
+    
+    C1->>ChatGW: emit('send_message', { roomId, content })
+    ChatGW->>ChatSvc: saveMessage(roomId, senderId, content)
+    ChatSvc->>DB: INSERT INTO messages
+    DB-->>ChatSvc: Success
+    ChatSvc-->>ChatGW: return savedMessage
+    
+    ChatGW->>ChatGW: broadcast to Room(roomId)
+    ChatGW-->>C1: emit('new_message', savedMessage)
+    ChatGW-->>C2: emit('new_message', savedMessage)
+```
+
+---
+
+## 8. Sơ đồ Thực Thể Kết Hợp (ERD)
+
+```mermaid
+erDiagram
+    USERS ||--o{ GAMES : "plays (white)"
+    USERS ||--o{ GAMES : "plays (black)"
+    USERS ||--o{ GAMES : "wins"
+    USERS ||--o{ TOURNAMENT_PARTICIPANTS : "participates"
+    USERS ||--o{ TOURNAMENTS : "creates"
+    USERS ||--o{ FRIENDS : "adds"
+    USERS ||--o{ MESSAGES : "sends"
+    USERS ||--o{ CHAT_ROOM_MEMBERS : "joins"
+    USERS ||--|| PROFILE_INFO : "has"
+
+    TOURNAMENTS ||--o{ TOURNAMENT_PARTICIPANTS : "has participants"
+    TOURNAMENTS ||--o{ GAMES : "contains"
+    
+    CHAT_ROOMS ||--o{ CHAT_ROOM_MEMBERS : "contains"
+    CHAT_ROOMS ||--o{ MESSAGES : "has"
+
+    USERS {
+        uuid id PK
+        varchar username
+        varchar email
+        text passwordHash
+        integer blitzRating
+        integer rapidRating
+        integer bulletRating
+        varchar role
+        timestamp createdAt
+    }
+
+    PROFILE_INFO {
+        serial id PK
+        jsonb metadata
+        uuid userId FK
+    }
+
+    FRIENDS {
+        uuid user1Id PK, FK
+        uuid user2Id PK, FK
+        varchar status
+    }
+
+    GAMES {
+        uuid id PK
+        uuid whiteId FK
+        uuid blackId FK
+        uuid winnerId FK
+        varchar status
+        varchar timeControl
+        text pgn
+        text finalFen
+        jsonb moves
+        uuid tournamentId FK
+        timestamp createdAt
+    }
+
+    TOURNAMENTS {
+        uuid id PK
+        varchar name
+        varchar format
+        varchar status
+        varchar timeControl
+        timestamp startTime
+        timestamp endTime
+        uuid creatorId FK
+    }
+
+    TOURNAMENT_PARTICIPANTS {
+        uuid tournamentId PK, FK
+        uuid userId PK, FK
+        real points
+        real tieBreak
+        integer rank
+    }
+
+    CHAT_ROOMS {
+        uuid id PK
+        varchar type
+        uuid referenceId
+        timestamp createdAt
+    }
+
+    CHAT_ROOM_MEMBERS {
+        uuid roomId PK, FK
+        uuid userId PK, FK
+    }
+
+    MESSAGES {
+        uuid id PK
+        uuid roomId FK
+        uuid senderId FK
+        varchar senderUsername
+        text content
+        timestamp createdAt
+    }
+```

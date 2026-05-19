@@ -28,4 +28,31 @@ export class GameController {
     if (!game) throw new NotFoundException('Game not found');
     return game;
   }
+
+  /**
+   * GET /game/:id/history
+   * Returns the full verbose move list for replay.
+   * Requires authentication so only logged-in users can access game data.
+   */
+  @Get(':id/history')
+  @UseGuards(JwtAuthGuard)
+  async getGameMoveHistory(@Param('id') id: string) {
+    // Verify the game exists first
+    const game = await this.gameService.getGameById(id);
+    if (!game) throw new NotFoundException('Game not found');
+
+    const moves = await this.gameService.getGameMoveHistory(id);
+    this.logger.log(`getGameMoveHistory for game ${id}: ${moves.length} moves`);
+
+    return {
+      gameId: id,
+      whiteUsername: game.whiteUsername,
+      blackUsername: game.blackUsername,
+      status: game.status,
+      winner: game.winnerId,
+      timeControl: game.timeControl,
+      finalFen: game.finalFen,
+      moves,
+    };
+  }
 }

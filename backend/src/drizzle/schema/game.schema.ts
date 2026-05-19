@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, timestamp, jsonb } from 'drizzle-orm/pg-core';
 import { users } from './users.schema';
 import { tournaments } from './tournament.schema';
 
@@ -13,6 +13,7 @@ export const games = pgTable('games', {
   timeControl: varchar('time_control', { length: 50 }),
   pgn: text('pgn'),
   finalFen: text('final_fen'),
+  moves: jsonb('moves'),
   tournamentId: uuid('tournament_id').references(() => tournaments.id),
   createdAt: timestamp('created_at').defaultNow(),
 });
