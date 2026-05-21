@@ -1,131 +1,178 @@
 "use client";
 
 import React, { useMemo } from "react";
+import type { StockfishEval } from "@/hooks/useStockfish";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface EvaluationBarProps {
-  score: number; // centipawns, positive = white ahead
-  orientation?: "white" | "black"; // board perspective
-  isCheckmate?: boolean;
+  /** Kết quả từ hook useStockfish. Nếu không truyền thì hiển thị trạng thái neutral. */
+  evaluation?: StockfishEval | null;
+  /** Góc nhìn của bàn cờ — "white" (trắng ở dưới) hoặc "black" (đen ở dưới) */
+  orientation?: "white" | "black";
+  /** Chiều cao thanh — khớp với chiều cao bàn cờ. Mặc định 480px */
+  height?: number | string;
+  /** Chiều rộng thanh. Mặc định 24px */
+  width?: number | string;
   className?: string;
 }
 
+// ── Conversion ────────────────────────────────────────────────────────────────
+
 /**
- * Converts centipawn score to a 0–100 percentage for White's fill.
- * Caps at ±15 pawns (1500 cp).
+ * Chuyển điểm centipawn → tỷ lệ phần trăm % cho phần Trắng (0–100).
+ *
+ * Logic:
+ *  - Dùng hàm sigmoid để các lợi thế nhỏ vẫn hiển thị rõ ràng.
+ *  - +500cp (5 quân) → ~100%, -500cp → ~0%
+ *  - Nếu |score| ≥ 500cp → kịch trần
  */
-function scoreToPercent(score: number): number {
-  const capped = Math.max(-1500, Math.min(1500, score));
-  // Sigmoid-like mapping so small advantages are visible
-  return 50 + (capped / 1500) * 45;
+function cpToWhitePercent(cp: number): number {
+  // Giới hạn ở ±500 cp (±5 quân)
+  const capped = Math.max(-500, Math.min(500, cp));
+  // Sigmoid scale: sigmoid(x/250) * 100 → smooth, không tuyến tính
+  const sigmoid = 1 / (1 + Math.exp(-capped / 180));
+  // Ánh xạ 0–1 → 8–92 để không bao giờ chạm kịch trần (trừ mate)
+  return 8 + sigmoid * 84;
 }
 
-function formatScore(score: number, isCheckmate: boolean): string {
-  if (isCheckmate) return score > 0 ? "M" : "-M";
-  const abs = Math.abs(score);
-  if (abs >= 100) return `${(abs / 100).toFixed(1)}`;
-  return `+${(abs / 100).toFixed(2)}`.replace("+", score >= 0 ? "+" : "-");
+/**
+ * Định dạng nhãn điểm số hiển thị trên thanh.
+ * Ví dụ: +1.40, -0.75, M3, -M5
+ */
+function formatEvalLabel(evaluation: StockfishEval): string {
+  if (evaluation.mate !== null) {
+    const m = evaluation.mate;
+    return m > 0 ? `M${m}` : `-M${Math.abs(m)}`;
+  }
+  const pawns = evaluation.score / 100;
+  const abs = Math.abs(pawns);
+  const sign = pawns >= 0 ? "+" : "-";
+  return `${sign}${abs.toFixed(2)}`;
 }
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export default function EvaluationBar({
-  score,
+  evaluation,
   orientation = "white",
-  isCheckmate = false,
+  height = 480,
+  width = 24,
   className = "",
 }: EvaluationBarProps) {
+  // ── Tính toán tỷ lệ fill ───────────────────────────────────────────────────
   const whitePercent = useMemo(() => {
-    if (isCheckmate) return score > 0 ? 100 : 0;
-    return scoreToPercent(score);
-  }, [score, isCheckmate]);
+    if (!evaluation) return 50; // Neutral khi chưa có dữ liệu
 
-  const blackPercent = 100 - whitePercent;
+    // Chiếu bí → kịch trần
+    if (evaluation.mate !== null) {
+      return evaluation.mate > 0 ? 100 : 0;
+    }
 
-  // The bar is always rendered top=black, bottom=white
-  // If orientation is black (flipped board), we flip the bar
-  const topPercent = orientation === "white" ? blackPercent : whitePercent;
-  const bottomPercent = orientation === "white" ? whitePercent : blackPercent;
+    const score = evaluation.score;
+    // ±500cp trở lên → kịch trần theo yêu cầu
+    if (score >= 500) return 100;
+    if (score <= -500) return 0;
+    return cpToWhitePercent(score);
+  }, [evaluation]);
 
-  const topColor = orientation === "white" ? "#1a1a2e" : "#f0d9b5";
-  const bottomColor = orientation === "white" ? "#f0d9b5" : "#1a1a2e";
+  // Nếu bàn cờ lật (orientation=black), lật cả thanh
+  // Thanh luôn render: phần trên = màu hiện tại "phía trên", phần dưới = "phía dưới"
+  const topPercent = orientation === "white"
+    ? 100 - whitePercent   // phần đen ở trên
+    : whitePercent;         // phần trắng ở trên
 
-  const advantage = score > 0 ? "white" : score < 0 ? "black" : "equal";
-  const scoreLabel = isCheckmate
-    ? score > 0
-      ? "White wins"
-      : "Black wins"
-    : Math.abs(score) < 30
-    ? "Equal"
-    : score > 0
-    ? `+${(Math.abs(score) / 100).toFixed(1)}`
-    : `-${(Math.abs(score) / 100).toFixed(1)}`;
+  const bottomPercent = 100 - topPercent;
+
+  // Màu cho 2 phần
+  const topColor    = orientation === "white" ? "#1c1c2e" : "#f5f0e8";
+  const bottomColor = orientation === "white" ? "#f5f0e8" : "#1c1c2e";
+
+  // Label điểm số
+  const label = evaluation ? formatEvalLabel(evaluation) : "0.00";
+
+  // Bên nào đang có lợi để chọn màu chữ label
+  const whiteAdvantage = whitePercent >= 50;
+
+  // Indicator đang tính toán
+  const isCalculating = evaluation?.isCalculating ?? false;
+
+  const heightPx = typeof height === "number" ? `${height}px` : height;
+  const widthPx  = typeof width  === "number" ? `${width}px`  : width;
 
   return (
     <div
-      className={`eval-bar-container ${className}`}
+      className={className}
       style={{
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         gap: "6px",
         userSelect: "none",
+        flexShrink: 0,
       }}
     >
-      {/* Score label */}
+      {/* ── Điểm số (phía trên) ───────────────────────────────────────────── */}
       <div
+        title={isCalculating ? "Đang phân tích..." : "Đánh giá thế cờ"}
         style={{
-          fontSize: "11px",
+          fontSize: "10px",
           fontWeight: 700,
-          color: advantage === "white" ? "#f0d9b5" : advantage === "black" ? "#aaa" : "#888",
-          letterSpacing: "0.03em",
-          minWidth: "36px",
+          fontFamily: "'Roboto Mono', 'Courier New', monospace",
+          color: whiteAdvantage ? "#f5f0e8" : "#9ca3af",
+          letterSpacing: "0.04em",
+          minWidth: widthPx,
           textAlign: "center",
-          fontFamily: "monospace",
+          padding: "2px 0",
+          opacity: isCalculating ? 0.6 : 1,
+          transition: "opacity 0.3s",
         }}
       >
-        {scoreLabel}
+        {label}
       </div>
 
-      {/* Bar */}
+      {/* ── Thanh chính ───────────────────────────────────────────────────── */}
       <div
         style={{
-          width: "18px",
-          height: "220px",
-          borderRadius: "10px",
+          width: widthPx,
+          height: heightPx,
+          borderRadius: "6px",
           overflow: "hidden",
-          border: "1px solid rgba(255,255,255,0.12)",
-          background: bottomColor,
+          border: "1px solid rgba(255,255,255,0.10)",
+          boxShadow: "0 2px 16px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05)",
           display: "flex",
           flexDirection: "column",
           position: "relative",
-          boxShadow: "0 2px 12px rgba(0,0,0,0.4)",
+          background: bottomColor,
         }}
       >
-        {/* Top half (black or white depending on orientation) */}
+        {/* Phần trên (đen hoặc trắng tuỳ orientation) */}
         <div
           style={{
             height: `${topPercent}%`,
             background: topColor,
-            transition: "height 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
+            transition: "height 0.55s cubic-bezier(0.34, 1.10, 0.64, 1)",
+            flexShrink: 0,
             position: "relative",
           }}
         >
-          {/* Checkmate indicator dot */}
-          {isCheckmate && (
-            <div
-              style={{
-                position: "absolute",
-                bottom: "4px",
-                left: "50%",
-                transform: "translateX(-50%)",
-                width: "6px",
-                height: "6px",
-                borderRadius: "50%",
-                background: advantage === "white" ? "#f0d9b5" : "#1a1a2e",
-              }}
-            />
-          )}
+          {/* Highlight mép dưới của phần trên để trông như đường phân cách */}
+          <div
+            style={{
+              position: "absolute",
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: "1.5px",
+              background: "rgba(168, 85, 247, 0.55)",
+              boxShadow: "0 0 4px rgba(168, 85, 247, 0.6)",
+              opacity: topPercent > 2 && topPercent < 98 ? 1 : 0,
+              transition: "opacity 0.3s",
+            }}
+          />
         </div>
 
-        {/* Middle line */}
+        {/* Đường giữa cố định (vị trí 50%) */}
         <div
           style={{
             position: "absolute",
@@ -133,24 +180,50 @@ export default function EvaluationBar({
             left: 0,
             right: 0,
             height: "1px",
-            background: "rgba(255,255,255,0.25)",
+            background: "rgba(168,85,247,0.2)",
             transform: "translateY(-50%)",
+            pointerEvents: "none",
           }}
         />
+
+        {/* Pulse khi đang tính toán */}
+        {isCalculating && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: "linear-gradient(to bottom, transparent 40%, rgba(168,85,247,0.07) 100%)",
+              animation: "evalPulse 1.5s ease-in-out infinite",
+              pointerEvents: "none",
+            }}
+          />
+        )}
       </div>
 
-      {/* Advantage badge */}
+      {/* ── Badge W / B ───────────────────────────────────────────────────── */}
       <div
         style={{
           fontSize: "9px",
-          color: "rgba(255,255,255,0.4)",
-          textTransform: "uppercase",
-          letterSpacing: "0.06em",
+          fontWeight: 700,
+          letterSpacing: "0.08em",
+          color: whiteAdvantage ? "rgba(245,240,232,0.6)" : "rgba(156,163,175,0.6)",
           textAlign: "center",
+          minWidth: widthPx,
+          transition: "color 0.5s",
         }}
       >
-        {advantage === "white" ? "W" : advantage === "black" ? "B" : "="}
+        {evaluation?.mate !== null && evaluation?.mate
+          ? evaluation.mate > 0 ? "W♔" : "B♚"
+          : whitePercent === 50 ? "=" : whiteAdvantage ? "W" : "B"}
       </div>
+
+      {/* ── CSS animation ─────────────────────────────────────────────────── */}
+      <style>{`
+        @keyframes evalPulse {
+          0%, 100% { opacity: 0.4; }
+          50%       { opacity: 1;   }
+        }
+      `}</style>
     </div>
   );
 }

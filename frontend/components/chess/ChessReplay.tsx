@@ -9,6 +9,8 @@ import {
   ChevronRight,
   SkipForward,
 } from "lucide-react";
+import { useStockfish } from "@/hooks/useStockfish";
+import EvaluationBar from "@/components/chess/EvaluationBar";
 
 // Lazy-load Chessboard so it never runs on the server
 const Chessboard = dynamic(
@@ -181,27 +183,42 @@ export default function ChessReplay({
       ? "Final"
       : `Move ${currentMoveIndex + 1} / ${moves.length}`;
 
+  // ── Stockfish: phân tích vị trí đang xem ─────────────────────────────────────
+  // displayFen thay đổi mỗi khi người dùng bấm nước → hook tự gửi lệnh mới tới Worker.
+  const evaluation = useStockfish(displayFen, true);
+
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div style={{ display: "flex", gap: "1.5rem", alignItems: "flex-start", flexWrap: "wrap" }}>
       {/* ── Board column ─────────────────────────────────────────────────── */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "12px" }}>
-        {/* Board */}
-        <div style={{ width: boardSize, aspectRatio: "1", position: "relative" }}>
-          {typeof window !== "undefined" && (
-            <Chessboard
-              position={displayFen}
-              arePiecesDraggable={false}
-              animationDuration={120}
-              boardOrientation={orientation}
-              customBoardStyle={{
-                borderRadius: "10px",
-                boxShadow: "0 16px 48px rgba(0,0,0,0.7)",
-              }}
-              customDarkSquareStyle={{ backgroundColor: "#4a3728" }}
-              customLightSquareStyle={{ backgroundColor: "#f0c080" }}
-            />
-          )}
+        {/* Board + Eval Bar side-by-side */}
+        <div style={{ display: "flex", alignItems: "stretch", gap: "10px" }}>
+          {/* Eval Bar — chiều cao tự co giãn theo bàn cờ */}
+          <EvaluationBar
+            evaluation={evaluation}
+            orientation={orientation}
+            height={480}
+            width={22}
+          />
+
+          {/* Bàn cờ */}
+          <div style={{ width: boardSize, aspectRatio: "1", position: "relative" }}>
+            {typeof window !== "undefined" && (
+              <Chessboard
+                position={displayFen}
+                arePiecesDraggable={false}
+                animationDuration={120}
+                boardOrientation={orientation}
+                customBoardStyle={{
+                  borderRadius: "10px",
+                  boxShadow: "0 16px 48px rgba(0,0,0,0.7)",
+                }}
+                customDarkSquareStyle={{ backgroundColor: "#4a3728" }}
+                customLightSquareStyle={{ backgroundColor: "#f0c080" }}
+              />
+            )}
+          </div>
         </div>
 
         {/* Navigation controls */}
@@ -249,6 +266,25 @@ export default function ChessReplay({
           <NavBtn onClick={goToEnd} disabled={isAtEnd} title="Đến cuối (End)">
             <SkipForward size={15} />
           </NavBtn>
+        </div>
+
+        {/* Eval score display */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            fontSize: "0.75rem",
+            color: "rgba(255,255,255,0.45)",
+            fontFamily: "monospace",
+          }}
+        >
+          <span style={{ opacity: evaluation.isCalculating ? 0.5 : 1, transition: "opacity 0.3s" }}>
+            {evaluation.mate !== null
+              ? evaluation.mate > 0 ? `M${evaluation.mate}` : `-M${Math.abs(evaluation.mate)}`
+              : `${evaluation.score >= 0 ? "+" : ""}${(evaluation.score / 100).toFixed(2)}`}
+          </span>
+          <span style={{ opacity: 0.4, fontSize: "0.65rem" }}>d{evaluation.depth}</span>
         </div>
 
         {/* Keyboard hint */}

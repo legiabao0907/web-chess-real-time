@@ -61,12 +61,18 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   updateWatchGame: (update) => {
     set((state) => {
       if (!state.watchingGame) return state;
-      return {
+      const next: WatchState = {
+        ...state,
         watchingGame: {
           ...state.watchingGame,
           ...update,
         },
       };
+      // Also sync top-level spectatorCount if present in update
+      if (update.spectatorCount !== undefined) {
+        next.spectatorCount = update.spectatorCount;
+      }
+      return next;
     });
   },
 
