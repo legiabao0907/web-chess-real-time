@@ -14,6 +14,7 @@ import { DRIZZLE } from '../drizzle/drizzle.module';
 import Redis from 'ioredis';
 import { REDIS_CLIENT } from '../redis/redis.module';
 import { v4 as uuidv4 } from 'uuid';
+import { TournamentSwissService } from './tournament-swiss.service';
 
 // ── Swiss round/game types (stored in Redis) ─────────────────────────────────
 export interface TournamentGame {
@@ -44,6 +45,7 @@ export class TournamentService {
     private readonly db: NodePgDatabase<typeof schema>,
     @Inject(REDIS_CLIENT)
     private readonly redis: Redis,
+    private readonly swissService: TournamentSwissService,
   ) {}
 
   // ── Redis key helpers ─────────────────────────────────────────────────────
@@ -315,34 +317,35 @@ export class TournamentService {
     // Update points in DB
     await this.applyRoundResults(tournamentId, currentRoundData);
 
-    // Get updated standings
-    const participants = await this.db
-      .select({
-        userId: tournamentParticipants.userId,
-        username: users.username,
-        points: tournamentParticipants.points,
-      })
-      .from(tournamentParticipants)
-      .leftJoin(users, eq(users.id, tournamentParticipants.userId))
-      .where(eq(tournamentParticipants.tournamentId, tournamentId));
-
-    // Collect all past pairings to avoid rematches
-    const pastPairings: Array<[string, string]> = [];
-    for (let r = 1; r <= currentRound; r++) {
-      const data = await this.redis.get(this.roundKey(tournamentId, r));
-      if (data) {
-        const rd: TournamentRound = JSON.parse(data);
-        rd.games.forEach((g) => pastPairings.push([g.whiteId, g.blackId]));
-      }
-    }
-
     const nextRound = currentRound + 1;
-    const round = this.generateSwissPairings(
+
+    // Dùng TournamentSwissService để sinh cặp đấu theo đúng Hệ Thụy Sĩ
+    const swissResult = await this.swissService.generateNextRoundPairs(
       tournamentId,
       nextRound,
-      participants as { userId: string; username: string; points: number }[],
-      pastPairings,
     );
+
+    // Chuyển SwissPairing[] → TournamentGame[]
+    const games: TournamentGame[] = swissResult.pairings.map((p) => ({
+      gameId: p.gameId,
+      tournamentId,
+      round: nextRound,
+      whiteId: p.whiteId,
+      whiteUsername: p.whiteUsername,
+      blackId: p.blackId,
+      blackUsername: p.blackUsername,
+      status: p.type === 'bye' ? 'finished' : 'pending',
+      result: p.type === 'bye' ? null : null,
+      whitePoints: p.type === 'bye' ? 1 : undefined,
+      blackPoints: p.type === 'bye' ? 0 : undefined,
+    }));
+
+    const round: TournamentRound = {
+      tournamentId,
+      round: nextRound,
+      games,
+      status: 'active',
+    };
 
     await this.redis.setex(this.roundKey(tournamentId, nextRound), 86400 * 7, JSON.stringify(round));
     await this.redis.set(this.currentRoundKey(tournamentId), String(nextRound));

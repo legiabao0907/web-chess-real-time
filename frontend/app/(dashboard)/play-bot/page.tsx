@@ -365,9 +365,13 @@ export default function PlayBotPage() {
           {/* Evaluation Bar */}
           {analysisEnabled && analysis && (
             <EvaluationBar
-              score={analysis.score}
+              evaluation={{
+                score: analysis.score,
+                mate: analysis.isCheckmate ? (analysis.score > 0 ? 1 : -1) : null,
+                depth: 0,
+                isCalculating: false
+              }}
               orientation={isPlayerWhite ? "white" : "black"}
-              isCheckmate={analysis.isCheckmate}
             />
           )}
 

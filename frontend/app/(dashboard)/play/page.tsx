@@ -11,11 +11,14 @@ import { Flag, Handshake, MessageSquare, Search, X, Send, ChevronLeft, ChevronRi
 import "./play.css";
 import { useChessSocket } from "@/hooks/useChessSocket";
 import { getUser, AuthUser } from "@/lib/auth";
+import { useSearchParams } from "next/navigation";
 import { useChatStore } from "@/store/useChatStore";
 import OpponentProfilePopup from "@/components/chess/OpponentProfilePopup";
 import EvaluationBar from "@/components/chess/EvaluationBar";
 
-export default function PlayPage() {
+function PlayPageContent() {
+  const searchParams = useSearchParams();
+  const urlGameId = searchParams.get("gameId");
   const [mounted, setMounted] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
   const moveHistoryRef = useRef<HTMLDivElement>(null);
@@ -48,6 +51,15 @@ export default function PlayPage() {
 
   const { connected, gameStatus, game, chatMessages, drawOffered, errorMessage, searchingTimeControl, analysis, actions } =
     useChessSocket({ userId: user?.id ?? "", username: user?.username ?? "Guest" });
+
+  // Auto-join game from URL if connected
+  useEffect(() => {
+    if (connected && urlGameId) {
+      if (game?.gameId !== urlGameId) {
+        actions.joinGame(urlGameId);
+      }
+    }
+  }, [connected, urlGameId, game?.gameId, actions]);
 
   // Sync clocks
   useEffect(() => {
@@ -307,9 +319,13 @@ export default function PlayPage() {
           {/* Evaluation Bar */}
           {analysisEnabled && analysis && (
             <EvaluationBar
-              score={analysis.score}
+              evaluation={{
+                score: analysis.score,
+                mate: analysis.isCheckmate ? (analysis.score > 0 ? 1 : -1) : null,
+                depth: 0,
+                isCalculating: false
+              }}
               orientation={!isPlayerWhite ? "black" : "white"}
-              isCheckmate={analysis.isCheckmate}
             />
           )}
           <div className={`w-full max-w-[580px] max-h-[580px] aspect-square relative`}>
@@ -540,5 +556,13 @@ export default function PlayPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function PlayPage() {
+  return (
+    <React.Suspense fallback={<div className="p-8 text-white text-center">Loading...</div>}>
+      <PlayPageContent />
+    </React.Suspense>
   );
 }

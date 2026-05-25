@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Trophy, Plus, Users, Clock, Calendar, Play, LogIn, LogOut, Crown, X, ChevronRight } from "lucide-react";
+import { Trophy, Plus, Users, Clock, Calendar, Crown, ChevronRight, X } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { getUser } from "@/lib/auth";
 
@@ -18,9 +18,6 @@ interface Tournament {
   participantCount: number;
 }
 
-interface TournamentDetail extends Tournament {
-  participants: { userId: string; username: string; points: number; rank: number | null }[];
-}
 
 const STATUS_STYLE: Record<string, { bg: string; text: string; label: string }> = {
   upcoming: { bg: "rgba(59,130,246,0.15)", text: "#60a5fa", label: "Upcoming" },
@@ -36,12 +33,12 @@ const TC_LABELS: Record<string, string> = {
 export default function TournamentsPage() {
   const user = getUser();
   const router = useRouter();
+  const [tab, setTab] = useState<"all" | "my">("all");
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [selected, setSelected] = useState<TournamentDetail | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [tab, setTab] = useState<"all" | "my">("all");
+
 
   const [form, setForm] = useState({
     name: "",
@@ -66,42 +63,10 @@ export default function TournamentsPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const openDetail = useCallback(async (id: string) => {
-    try {
-      const data = await apiFetch<TournamentDetail>(`/tournament/${id}`);
-      setSelected(data);
-    } catch {}
-  }, []);
+  const openDetail = useCallback((id: string) => {
+    router.push(`/tournaments/${id}`);
+  }, [router]);
 
-  const handleJoin = useCallback(async (id: string) => {
-    setActionLoading(id + "_join");
-    try {
-      await apiFetch(`/tournament/${id}/join`, { method: "POST" });
-      await load();
-      if (selected?.id === id) await openDetail(id);
-    } catch (e: any) { alert(e.message); }
-    finally { setActionLoading(null); }
-  }, [load, selected, openDetail]);
-
-  const handleLeave = useCallback(async (id: string) => {
-    setActionLoading(id + "_leave");
-    try {
-      await apiFetch(`/tournament/${id}/leave`, { method: "DELETE" });
-      await load();
-      if (selected?.id === id) await openDetail(id);
-    } catch (e: any) { alert(e.message); }
-    finally { setActionLoading(null); }
-  }, [load, selected, openDetail]);
-
-  const handleStart = useCallback(async (id: string) => {
-    setActionLoading(id + "_start");
-    try {
-      await apiFetch(`/tournament/${id}/start`, { method: "PATCH" });
-      await load();
-      if (selected?.id === id) await openDetail(id);
-    } catch (e: any) { alert(e.message); }
-    finally { setActionLoading(null); }
-  }, [load, selected, openDetail]);
 
   const handleCreate = async () => {
     if (!form.name.trim()) { alert("Please enter a tournament name"); return; }
@@ -114,8 +79,6 @@ export default function TournamentsPage() {
     } catch (e: any) { alert(e.message); }
     finally { setActionLoading(null); }
   };
-
-  const isJoined = (t: TournamentDetail) => t.participants.some(p => p.userId === user?.id);
 
   return (
     <div style={{ padding: "28px 36px", minHeight: "100%", background: "linear-gradient(180deg,#0a0a12,#0d0d1a)", color: "white" }}>
@@ -200,76 +163,7 @@ export default function TournamentsPage() {
         </div>
       )}
 
-      {/* Detail Modal */}
-      {selected && (
-        <Modal onClose={() => setSelected(null)} title={selected.name}>
-          <div style={{ display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" }}>
-            <Chip label={STATUS_STYLE[selected.status]?.label ?? selected.status} color={STATUS_STYLE[selected.status]?.text ?? "#fff"} />
-            <Chip label={TC_LABELS[selected.timeControl] ?? selected.timeControl} color="#f59e0b" />
-            <Chip label={`${selected.format} format`} color="#60a5fa" />
-          </div>
-
-          <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.5)", marginBottom: "16px" }}>
-            Created by <strong style={{ color: "white" }}>{selected.creatorUsername}</strong>
-            {selected.startTime && ` · Starts ${new Date(selected.startTime).toLocaleString()}`}
-          </div>
-
-          {/* Leaderboard */}
-          <div style={{ marginBottom: "16px" }}>
-            <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.4)", fontWeight: 700, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              Participants ({selected.participants.length})
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "4px", maxHeight: "220px", overflowY: "auto" }}>
-              {selected.participants.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "20px", color: "rgba(255,255,255,0.3)", fontSize: "13px" }}>No participants yet</div>
-              ) : selected.participants.map((p, i) => (
-                <div key={p.userId} style={{
-                  display: "flex", alignItems: "center", gap: "10px",
-                  padding: "8px 12px", borderRadius: "8px",
-                  background: p.userId === user?.id ? "rgba(168,85,247,0.12)" : "rgba(255,255,255,0.03)",
-                  border: p.userId === user?.id ? "1px solid rgba(168,85,247,0.3)" : "1px solid transparent",
-                }}>
-                  <span style={{ width: "20px", color: i < 3 ? ["#f59e0b","#9ca3af","#b45309"][i] : "rgba(255,255,255,0.3)", fontWeight: 700, fontSize: "12px" }}>
-                    {p.rank ?? i + 1}
-                  </span>
-                  <span style={{ flex: 1, fontSize: "13px", fontWeight: p.userId === user?.id ? 700 : 400 }}>{p.username}</span>
-                  <span style={{ fontSize: "12px", color: "#a855f7", fontWeight: 600 }}>{p.points} pts</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Actions */}
-          {user && (
-            <div style={{ display: "flex", gap: "8px" }}>
-              {isJoined(selected) ? (
-                <>
-                  {selected.status === "upcoming" && selected.creatorId === user.id && (
-                    <button onClick={() => handleStart(selected.id)} disabled={!!actionLoading}
-                      style={{ flex: 1, padding: "10px", borderRadius: "9px", fontWeight: 700, fontSize: "13px", cursor: "pointer", border: "none", background: "linear-gradient(135deg,#22c55e,#16a34a)", color: "white" }}>
-                      <Play size={14} style={{ display: "inline", marginRight: "6px" }} />
-                      Start Tournament
-                    </button>
-                  )}
-                  {selected.status === "upcoming" && (
-                    <button onClick={() => handleLeave(selected.id)} disabled={!!actionLoading}
-                      style={{ flex: 1, padding: "10px", borderRadius: "9px", fontWeight: 700, fontSize: "13px", cursor: "pointer", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#ef4444" }}>
-                      <LogOut size={14} style={{ display: "inline", marginRight: "6px" }} />
-                      Leave
-                    </button>
-                  )}
-                </>
-              ) : selected.status === "upcoming" ? (
-                <button onClick={() => handleJoin(selected.id)} disabled={!!actionLoading}
-                  style={{ flex: 1, padding: "10px", borderRadius: "9px", fontWeight: 700, fontSize: "13px", cursor: "pointer", border: "none", background: "linear-gradient(135deg,#a855f7,#7c3aed)", color: "white" }}>
-                  <LogIn size={14} style={{ display: "inline", marginRight: "6px" }} />
-                  Join Tournament
-                </button>
-              ) : null}
-            </div>
-          )}
-        </Modal>
-      )}
+      {/* (Detail modal removed — click card to go to /tournaments/[id]) */}
 
       {/* Create Modal */}
       {showCreate && (

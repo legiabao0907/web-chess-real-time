@@ -755,10 +755,11 @@ export class GameGateway
       );
       if (round) {
         const tournament = await this.tournamentService.getTournament(info.tournamentId);
+        const rounds = await this.tournamentService.getTournamentRounds(info.tournamentId);
         this.tournamentGateway.broadcastTournamentUpdate(info.tournamentId, {
           type: 'game_result',
           tournament,
-          round,
+          rounds,
           gameId,
           result,
         });

@@ -1,5 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { TournamentService } from './tournament.service';
+import { TournamentSwissService } from './tournament-swiss.service';
 import { TournamentController } from './tournament.controller';
 import { TournamentGateway } from './tournament.gateway';
 import { DrizzleModule } from '../drizzle/drizzle.module';
@@ -18,8 +19,8 @@ import { GameModule } from '../game/game.module';
     RedisModule,
     forwardRef(() => GameModule),
   ],
-  providers: [TournamentService, TournamentGateway],
+  providers: [TournamentService, TournamentSwissService, TournamentGateway],
   controllers: [TournamentController],
-  exports: [TournamentService, TournamentGateway],
+  exports: [TournamentService, TournamentSwissService, TournamentGateway],
 })
 export class TournamentModule {}

@@ -13,7 +13,7 @@ import { useStockfish } from "@/hooks/useStockfish";
 import EvaluationBar from "@/components/chess/EvaluationBar";
 
 // Lazy-load Chessboard so it never runs on the server
-const Chessboard = dynamic(
+const Chessboard: any = dynamic(
   () => import("react-chessboard").then((mod) => mod.Chessboard as any),
   { ssr: false }
 );
