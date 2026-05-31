@@ -1,6 +1,6 @@
-# Game Module - Sequence Diagrams
+# Chess App — Sequence Diagrams & Architecture
 
-File này chứa các sơ đồ tuần tự (Sequence Diagram) mô tả các luồng nghiệp vụ cốt lõi của module Game, bao gồm tìm trận (Matchmaking), đánh cờ (Make Move), và lưu trữ lịch sử (Archiving). Bạn có thể dùng các tool như [Mermaid Live Editor](https://mermaid.live/) hoặc plugin Markdown Preview trên IDE để xem.
+Tài liệu này chứa các sơ đồ tuần tự (Sequence Diagram) và ERD mô tả toàn bộ luồng nghiệp vụ cốt lõi của hệ thống: Game, Tournament, Chat, ELO, và Authentication. Bạn có thể dùng [Mermaid Live Editor](https://mermaid.live/) hoặc plugin Markdown Preview trên IDE để xem.
 
 ## 1. Luồng Tìm Trận (Matchmaking) - Sử dụng Lua Script Atomic
 
@@ -321,3 +321,261 @@ erDiagram
         timestamp createdAt
     }
 ```
+
+---
+
+## 9. Luồng Tính & Hiển Thị ELO Sau Trận Đấu (NEW)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant GW as GameGateway
+    participant LB as LeaderboardGateway
+    participant LBSvc as LeaderboardService
+    participant Redis as Redis (Leaderboard)
+    participant DB as Postgres (Drizzle)
+    participant FE as Frontend (Play Page)
+
+    Note over GW,FE: Game kết thúc (checkmate/resign/draw)
+    GW->>GW: triggerLeaderboardUpdate(game)
+    GW->>LBSvc: getPlayerRank(whiteId, category)
+    LBSvc->>Redis: ZREVRANK + ZSCORE
+    Redis-->>LBSvc: { rank, elo }
+    GW->>LB: triggerEloUpdate({winnerId, loserId, ...})
+
+    Note over LB: Tính ELO chuẩn FIDE, K=32
+    LB->>LB: winnerChange = round(K * (score - expected))
+    LB->>LB: loserChange = round(K * (score - expected))
+    LB->>LB: winnerNewElo = max(100, winnerElo + winnerChange)
+
+    LB->>LBSvc: updateElo(winner, category, newElo, delta)
+    LBSvc->>Redis: ZADD sorted set + SETEX player data hash
+    LBSvc->>DB: UPDATE users SET blitzRating = newElo
+    DB-->>LBSvc: ✓
+
+    LB->>LBSvc: updateElo(loser, category, newElo, delta)
+    LBSvc->>Redis: ZADD sorted set + SETEX player data hash
+    LBSvc->>DB: UPDATE users SET blitzRating = newElo
+    DB-->>LBSvc: ✓
+
+    LB->>LB: broadcastLeaderboard(category) → all subscribers
+    LB-->>GW: return { winnerChange, loserChange, winnerNewElo, loserNewElo }
+    
+    GW->>GW: Map winner/loser → white/black changes
+    GW->>FE: emit('game_over', { ..., whiteEloChange, blackEloChange, whiteNewElo, blackNewElo })
+    
+    Note over FE: Hiển thị Game Over Modal
+    FE->>FE: Parse eloChange = myColor===white ? whiteChange : blackChange
+    FE->>FE: Hiển thị icon (🏆/💔/🤝) + old→new ELO + glow effect
+    FE->>FE: Cập nhật localStorage authUser.eloBlitz = newElo
+```
+
+---
+
+## 10. Luồng Tự Động Chuyển Vòng Trong Giải Đấu (NEW)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant GW as GameGateway
+    participant TSvc as TournamentService
+    participant TGW as TournamentGateway
+    participant Redis as Redis (Tournament Rounds)
+    participant FE as Frontend (Tournament Detail)
+
+    Note over GW,FE: Game cuối cùng trong vòng kết thúc
+    GW->>TSvc: recordTournamentResult(tournamentId, gameId, result)
+    TSvc->>Redis: Cập nhật round data (game.status = 'finished')
+    TSvc-->>GW: return updated round
+
+    GW->>TSvc: getTournament(tournamentId) → status = 'ongoing'
+    GW->>TSvc: getTournamentRounds(tournamentId)
+    GW->>TGW: broadcastTournamentUpdate({ type: 'game_result', rounds })
+
+    Note over GW: Kiểm tra allFinished
+    GW->>GW: round.games.every(g => g.status === 'finished') → true
+
+    alt round >= 7 (max rounds)
+        GW->>TSvc: finishTournament(tournamentId)
+        GW->>TGW: broadcastTournamentUpdate({ type: 'tournament_finished' })
+    else round < 7
+        GW->>TGW: setNextRoundTimer(tournamentId, now + 30s)
+        GW->>TGW: broadcastTournamentUpdate({ type: 'round_countdown', countdownMs: 30000 })
+        TGW-->>FE: tournament_update → round_countdown
+        FE->>FE: startCountdown(30000) → hiển thị "⏳ Next round in 30s..."
+        FE->>FE: setInterval → đếm ngược 30→29→...→0
+
+        Note over GW: Sau 30 giây
+        GW->>TGW: clearNextRoundTimer(tournamentId)
+        GW->>TSvc: nextRound(tournamentId)
+        TSvc->>TSvc: Swiss pairing (generateNextRoundPairs)
+        TSvc->>Redis: Lưu round mới, tạo game states
+        GW->>TGW: broadcastTournamentUpdate({ type: 'next_round', rounds })
+        TGW-->>FE: tournament_update → next_round
+        FE->>FE: clearCountdown() → xóa dòng countdown
+        FE->>FE: Hiển thị pairings vòng mới
+    end
+```
+
+---
+
+## 11. Luồng Xóa Giải Đấu (NEW)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant FE as Frontend (Tournament Detail)
+    participant Ctrl as TournamentController
+    participant TSvc as TournamentService
+    participant TGW as TournamentGateway
+    participant DB as Postgres (Drizzle)
+    participant Redis as Redis
+
+    Note over FE: Creator/admin click "Delete Tournament"
+    FE->>FE: confirm("Delete permanently?")
+    FE->>Ctrl: DELETE /tournament/:id (JWT Auth)
+    Ctrl->>TSvc: isAdmin(userId) → check role
+    TSvc->>DB: SELECT role FROM users WHERE id = userId
+    DB-->>TSvc: role = 'user'|'admin'
+
+    Ctrl->>TSvc: deleteTournament(id, userId, isAdmin)
+    TSvc->>DB: SELECT * FROM tournaments WHERE id = ?
+    DB-->>TSvc: tournament record
+
+    alt status = 'ongoing'
+        TSvc-->>Ctrl: ForbiddenException("Finish it first")
+    else creator/admin & status != 'ongoing'
+        TSvc->>DB: DELETE FROM tournament_participants WHERE tournamentId = ?
+        TSvc->>DB: UPDATE games SET tournamentId = NULL WHERE tournamentId = ?
+        TSvc->>DB: DELETE FROM tournaments WHERE id = ?
+        DB-->>TSvc: ✓
+
+        Note over TSvc,Redis: Clean up Redis keys
+        loop round 1→7
+            TSvc->>Redis: DEL tournament:{id}:round:{r}
+        end
+        TSvc->>Redis: DEL tournament:{id}:currentRound
+        TSvc->>Redis: SCAN tournament:game:* → DEL matching keys
+        Redis-->>TSvc: ✓
+
+        TSvc-->>Ctrl: { message: 'Tournament deleted successfully' }
+    end
+
+    Ctrl->>TGW: clearNextRoundTimer(id)
+    Ctrl-->>FE: 200 OK
+    FE->>FE: router.push('/tournaments')
+```
+
+---
+
+## 12. ERD Cập Nhật — Redis Data Structures (NEW)
+
+```mermaid
+erDiagram
+    USERS ||--o{ GAMES : "plays (white)"
+    USERS ||--o{ GAMES : "plays (black)"
+    USERS ||--o{ GAMES : "wins"
+    USERS ||--o{ TOURNAMENT_PARTICIPANTS : "participates"
+    USERS ||--o{ TOURNAMENTS : "creates"
+    USERS ||--o{ FRIENDS : "adds"
+    USERS ||--o{ MESSAGES : "sends"
+    USERS ||--o{ CHAT_ROOM_MEMBERS : "joins"
+    USERS ||--|| PROFILE_INFO : "has"
+
+    TOURNAMENTS ||--o{ TOURNAMENT_PARTICIPANTS : "has participants"
+    TOURNAMENTS ||--o{ GAMES : "contains"
+    
+    CHAT_ROOMS ||--o{ CHAT_ROOM_MEMBERS : "contains"
+    CHAT_ROOMS ||--o{ MESSAGES : "has"
+
+    USERS {
+        uuid id PK
+        varchar username
+        varchar email
+        text passwordHash
+        integer blitzRating "ELO Blitz ← updated sau game"
+        integer rapidRating "ELO Rapid ← updated sau game"
+        integer bulletRating "ELO Bullet ← updated sau game"
+        varchar role
+        timestamp createdAt
+    }
+
+    PROFILE_INFO {
+        serial id PK
+        jsonb metadata
+        uuid userId FK
+    }
+
+    FRIENDS {
+        uuid user1Id PK_FK
+        uuid user2Id PK_FK
+        varchar status
+    }
+
+    GAMES {
+        uuid id PK
+        uuid whiteId FK
+        uuid blackId FK
+        uuid winnerId FK
+        varchar status
+        varchar timeControl
+        text pgn
+        text finalFen
+        jsonb moves
+        uuid tournamentId FK
+        timestamp createdAt
+    }
+
+    TOURNAMENTS {
+        uuid id PK
+        varchar name
+        varchar format
+        varchar status
+        varchar timeControl
+        timestamp startTime
+        timestamp endTime
+        uuid creatorId FK
+    }
+
+    TOURNAMENT_PARTICIPANTS {
+        uuid tournamentId PK_FK
+        uuid userId PK_FK
+        real points
+        real tieBreak
+        integer rank
+    }
+
+    CHAT_ROOMS {
+        uuid id PK
+        varchar type
+        uuid referenceId
+        timestamp createdAt
+    }
+
+    CHAT_ROOM_MEMBERS {
+        uuid roomId PK_FK
+        uuid userId PK_FK
+    }
+
+    MESSAGES {
+        uuid id PK
+        uuid roomId FK
+        uuid senderId FK
+        varchar senderUsername
+        text content
+        timestamp createdAt
+    }
+```
+
+### Redis Data Structures (In-Memory / Cache)
+
+| Key Pattern | Type | Purpose |
+|---|---|---|
+| `chess:leaderboard:{blitz\|bullet\|rapid}` | Sorted Set | ELO ranking (score=ELO, member=userId) |
+| `chess:player:{userId}:{blitz\|bullet\|rapid}` | Hash | Player stats: `{elo, wins, losses, draws, gamesPlayed, eloChange, trend}` |
+| `chess:online_users` | Hash | userId → socketId mapping |
+| `tournament:{id}:round:{1-7}` | String (JSON) | Tournament round data (pairings, results) |
+| `tournament:{id}:currentRound` | String | Current round number |
+| `tournament:game:{gameId}` | String (JSON) | Reverse lookup: { tournamentId, round } |
+| `chat:room:{roomId}:messages` | List | Last 50 messages (cache) |
+| `game:{gameId}` | Hash | Active game state (FEN, PGN, clocks, etc.) |

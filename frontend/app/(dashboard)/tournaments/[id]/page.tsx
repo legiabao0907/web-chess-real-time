@@ -39,6 +39,7 @@ const TC: Record<string, string> = {
   rapid_10: "Rapid 10+0", rapid_15_10: "Rapid 15+10",
 };
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8080";
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function TournamentDetailPage() {
@@ -51,7 +52,40 @@ export default function TournamentDetailPage() {
   const [activeRound, setActiveRound] = useState(0);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [notification, setNotification] = useState<{ msg: string; gameId?: string } | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const socketRef = useRef<Socket | null>(null);
+  const nextRoundAtRef = useRef<number | null>(null);
+  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── Countdown helpers (useRef to avoid stale closure) ─────────────────────
+  const clearCountdown = useCallback(() => {
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+    nextRoundAtRef.current = null;
+    setTimeLeft(null);
+  }, []);
+
+  const startCountdown = useCallback((countdownMs: number) => {
+    clearCountdown();
+    const targetTime = Date.now() + countdownMs;
+    nextRoundAtRef.current = targetTime;
+    const update = () => {
+      const remaining = Math.max(0, Math.ceil((nextRoundAtRef.current! - Date.now()) / 1000));
+      setTimeLeft(remaining);
+      if (remaining <= 0) {
+        if (countdownTimerRef.current) {
+          clearInterval(countdownTimerRef.current);
+          countdownTimerRef.current = null;
+        }
+        nextRoundAtRef.current = null;
+        setTimeLeft(null);
+      }
+    };
+    update();
+    countdownTimerRef.current = setInterval(update, 1000);
+  }, [clearCountdown]);
 
   const notify = (msg: string, gameId?: string) => {
     setNotification({ msg, gameId });
@@ -60,6 +94,7 @@ export default function TournamentDetailPage() {
 
   // ── REST fetch ──────────────────────────────────────────────────────────────
   const fetchState = useCallback(async () => {
+    clearCountdown();
     try {
       const [t, r] = await Promise.all([
         apiFetch<TournamentDetail>(`/tournament/${id}`),
@@ -69,13 +104,13 @@ export default function TournamentDetailPage() {
       setRounds(r);
       if (r.length > 0) setActiveRound(r.length - 1);
     } catch {}
-  }, [id]);
+  }, [id, clearCountdown]);
 
   useEffect(() => { fetchState(); }, [fetchState]);
 
   // ── WebSocket ───────────────────────────────────────────────────────────────
   useEffect(() => {
-    const sock = io(`${API}/tournament`, { transports: ["websocket", "polling"] });
+    const sock = io(`${BACKEND}/tournament`, { transports: ["websocket", "polling"] });
     socketRef.current = sock;
 
     sock.on("connect", () => {
@@ -90,13 +125,23 @@ export default function TournamentDetailPage() {
     });
 
     sock.on("tournament_update", (data: any) => {
+      // Process countdown/round-change events FIRST (before data updates)
+      if (data.type === "next_round" || data.type === "tournament_finished") {
+        clearCountdown();
+        if (data.type === "next_round") notify(`⚔️ Round ${data.rounds?.length} has started!`);
+        if (data.type === "tournament_finished") notify("🏁 Tournament has finished!");
+      }
+      if (data.type === "round_countdown" && data.countdownMs) {
+        startCountdown(data.countdownMs);
+      }
+      if (data.type === "tournament_started") notify("🏆 Tournament started! Round 1 pairings are ready.");
+
+      // Then update data
       if (data.tournament) setTournament(data.tournament);
       if (data.rounds) {
         setRounds(data.rounds);
         setActiveRound(data.rounds.length - 1);
       }
-      if (data.type === "tournament_started") notify("🏆 Tournament started! Round 1 pairings are ready.");
-      if (data.type === "next_round") notify(`⚔️ Round ${data.rounds?.length} has started!`);
     });
 
     sock.on("tournament_game_ready", (data: any) => {
@@ -156,6 +201,16 @@ export default function TournamentDetailPage() {
     finally { setActionLoading(null); }
   };
 
+  const handleDelete = async () => {
+    if (!confirm("Delete this tournament permanently? This cannot be undone.")) return;
+    setActionLoading("delete");
+    try {
+      await apiFetch(`/tournament/${id}`, { method: "DELETE" });
+      router.push("/tournaments");
+    } catch (e: any) { alert(e.message); }
+    finally { setActionLoading(null); }
+  };
+
   if (!tournament) return (
     <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "80vh" }}>
       <Loader2 size={36} color="#a855f7" style={{ animation: "spin 1s linear infinite" }} />
@@ -180,7 +235,7 @@ export default function TournamentDetailPage() {
         }}>
           <p style={{ margin: 0, fontSize: "13px", color: "rgba(255,255,255,0.9)" }}>{notification.msg}</p>
           {notification.gameId && (
-            <button onClick={() => router.push(`/play?gameId=${notification.gameId}`)}
+            <button onClick={() => router.push(`/tournament-game/${notification.gameId}`)}
               style={{ background: "linear-gradient(135deg,#a855f7,#7c3aed)", border: "none", borderRadius: "8px", color: "white", padding: "8px 14px", cursor: "pointer", fontWeight: 700, fontSize: "12px" }}>
               Go to Game →
             </button>
@@ -229,14 +284,14 @@ export default function TournamentDetailPage() {
                   Start Tournament
                 </Btn>
               )}
-              {tournament.status === "ongoing" && allFinished && (
-                <Btn onClick={handleNextRound} loading={actionLoading === "next"} color="#a855f7" icon={<SkipForward size={14} />}>
-                  Next Round
-                </Btn>
-              )}
               {tournament.status === "ongoing" && (
                 <Btn onClick={handleFinish} loading={actionLoading === "finish"} color="#ef4444" variant="outline">
                   End Tournament
+                </Btn>
+              )}
+              {tournament.status === "finished" && (
+                <Btn onClick={handleDelete} loading={actionLoading === "delete"} color="#ef4444" variant="outline">
+                  Delete Tournament
                 </Btn>
               )}
             </>
@@ -249,6 +304,19 @@ export default function TournamentDetailPage() {
 
         {/* Left: Rounds */}
         <div>
+          {/* Countdown / Status banner (above everything) */}
+          {timeLeft !== null && timeLeft > 0 ? (
+            <div style={{ marginBottom: "18px", padding: "14px 18px", background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.3)", borderRadius: "12px", fontSize: "14px", color: "#4ade80", display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 600 }}>
+              <span>⏳ Next round starts in {timeLeft}s...</span>
+              <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />
+            </div>
+          ) : isCreator && tournament.status === "ongoing" && allFinished ? (
+            <div style={{ marginBottom: "18px", padding: "14px 18px", background: "rgba(168,85,247,0.07)", border: "1px solid rgba(168,85,247,0.25)", borderRadius: "12px", fontSize: "13px", color: "rgba(255,255,255,0.7)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span>✅ All games in this round are finished. Preparing next round...</span>
+              <Loader2 size={16} style={{ animation: "spin 1s linear infinite", color: "#a855f7" }} />
+            </div>
+          ) : null}
+
           {tournament.status === "upcoming" ? (
             <EmptyState icon={<Swords size={40} />} title="Waiting to start" desc={isCreator ? "Click 'Start Tournament' to generate Round 1 pairings." : "Waiting for the organizer to start the tournament."} />
           ) : rounds.length === 0 ? (
@@ -275,19 +343,8 @@ export default function TournamentDetailPage() {
               {currentRound && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                   {currentRound.games.map((game) => (
-                    <GameCard key={game.gameId} game={game} userId={user?.id} onPlay={() => router.push(`/play?gameId=${game.gameId}`)} />
+                    <GameCard key={game.gameId} game={game} userId={user?.id} onPlay={() => router.push(`/tournament-game/${game.gameId}`)} />
                   ))}
-                </div>
-              )}
-
-              {/* Next round hint */}
-              {isCreator && tournament.status === "ongoing" && allFinished && (
-                <div style={{ marginTop: "18px", padding: "14px 18px", background: "rgba(168,85,247,0.07)", border: "1px solid rgba(168,85,247,0.25)", borderRadius: "12px", fontSize: "13px", color: "rgba(255,255,255,0.7)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span>✅ All games in this round are finished.</span>
-                  <button onClick={handleNextRound} disabled={!!actionLoading}
-                    style={{ background: "linear-gradient(135deg,#a855f7,#7c3aed)", border: "none", borderRadius: "8px", color: "white", padding: "8px 16px", cursor: "pointer", fontWeight: 700, fontSize: "12px" }}>
-                    {actionLoading === "next" ? "Generating..." : "Start Next Round →"}
-                  </button>
                 </div>
               )}
             </>

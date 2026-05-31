@@ -1,0 +1,593 @@
+/* ─── Public Profile Panel ────────────────────────────────────────────────── */
+/* Reuses pp- conventions for consistency with ProfilePanel.css               */
+
+.ppp-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  z-index: 900;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.ppp-overlay-visible {
+  opacity: 1;
+  pointer-events: all;
+}
+
+/* ─── Panel ───────────────────────────────────────────────────────────────── */
+.ppp-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: 440px;
+  max-width: 100vw;
+  background: linear-gradient(160deg, #0f0c18 0%, #0a0812 100%);
+  border-left: 1px solid rgba(168, 85, 247, 0.15);
+  z-index: 950;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  box-shadow: -8px 0 40px rgba(0, 0, 0, 0.7);
+}
+
+.ppp-panel-open {
+  transform: translateX(0);
+}
+
+/* ─── Header ──────────────────────────────────────────────────────────────── */
+.ppp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+  background: rgba(168, 85, 247, 0.04);
+}
+
+.ppp-header-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+}
+
+.ppp-close-btn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  transition: color 0.2s, transform 0.2s;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ppp-close-btn:hover {
+  color: #a855f7;
+  background: rgba(168, 85, 247, 0.1);
+  transform: rotate(90deg);
+}
+
+/* ─── Body ────────────────────────────────────────────────────────────────── */
+.ppp-body {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(168, 85, 247, 0.2) transparent;
+}
+
+.ppp-body::-webkit-scrollbar { width: 4px; }
+.ppp-body::-webkit-scrollbar-thumb {
+  background: rgba(168, 85, 247, 0.25);
+  border-radius: 4px;
+}
+
+/* ─── Hero section ───────────────────────────────────────────────────────── */
+.ppp-hero {
+  padding: 1.5rem;
+  background: linear-gradient(180deg, rgba(168,85,247,0.06) 0%, transparent 100%);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.ppp-hero-top {
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-start;
+  margin-bottom: 1.25rem;
+}
+
+.ppp-avatar-wrap {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #a855f7, #e230ff);
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.ppp-avatar-inner {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #0f0c18;
+}
+
+.ppp-avatar-inner img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.ppp-hero-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.ppp-username {
+  font-size: 1.375rem;
+  font-weight: 800;
+  color: white;
+  letter-spacing: -0.02em;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ppp-elo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #a855f7;
+  margin-bottom: 8px;
+}
+
+.ppp-elo-tier-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: rgba(168,85,247,0.15);
+  border: 1px solid rgba(168,85,247,0.3);
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #a855f7;
+}
+
+.ppp-meta-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ppp-meta-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+
+.ppp-bio {
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+  line-height: 1.5;
+  margin-top: 6px;
+}
+
+/* ─── Action buttons ─────────────────────────────────────────────────────── */
+.ppp-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.ppp-actions-full {
+  grid-column: 1 / -1;
+}
+
+.ppp-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0.625rem 1rem;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+  white-space: nowrap;
+}
+
+.ppp-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ppp-btn-primary {
+  background: linear-gradient(135deg, #a855f7, #e230ff);
+  color: white;
+}
+
+.ppp-btn-primary:hover:not(:disabled) {
+  opacity: 0.88;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(168,85,247,0.35);
+}
+
+.ppp-btn-success {
+  background: rgba(34,197,94,0.15);
+  color: #22c55e;
+  border: 1px solid rgba(34,197,94,0.3);
+}
+
+.ppp-btn-success:hover:not(:disabled) {
+  background: rgba(34,197,94,0.25);
+  box-shadow: 0 4px 12px rgba(34,197,94,0.2);
+}
+
+.ppp-btn-success-solid {
+  background: #22c55e;
+  color: white;
+}
+
+.ppp-btn-success-solid:hover:not(:disabled) {
+  background: #16a34a;
+}
+
+.ppp-btn-ghost {
+  background: rgba(255,255,255,0.05);
+  color: rgba(255,255,255,0.7);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.ppp-btn-ghost:hover:not(:disabled) {
+  background: rgba(255,255,255,0.1);
+}
+
+.ppp-btn-danger-ghost {
+  background: rgba(239,68,68,0.08);
+  color: #ef4444;
+  border: 1px solid rgba(239,68,68,0.2);
+}
+
+.ppp-btn-danger-ghost:hover:not(:disabled) {
+  background: rgba(239,68,68,0.15);
+}
+
+.ppp-btn-purple-ghost {
+  background: rgba(168,85,247,0.1);
+  color: #a855f7;
+  border: 1px solid rgba(168,85,247,0.25);
+}
+
+.ppp-btn-purple-ghost:hover:not(:disabled) {
+  background: rgba(168,85,247,0.2);
+}
+
+.ppp-btn-disabled {
+  background: rgba(255,255,255,0.05);
+  color: rgba(255,255,255,0.3);
+  border: 1px solid rgba(255,255,255,0.08);
+  cursor: not-allowed;
+}
+
+/* ─── Section ────────────────────────────────────────────────────────────── */
+.ppp-section {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+
+.ppp-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  margin-bottom: 1rem;
+}
+
+/* ─── Stats grid ─────────────────────────────────────────────────────────── */
+.ppp-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.ppp-stat-card {
+  background: #121218;
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 10px;
+  padding: 0.875rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  transition: border-color 0.2s;
+}
+
+.ppp-stat-card:hover { border-color: rgba(168,85,247,0.2); }
+
+.ppp-stat-val {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: white;
+}
+
+.ppp-stat-lbl {
+  font-size: 8px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.35);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ppp-elo-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.ppp-elo-mini {
+  background: #121218;
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 10px;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.ppp-elo-mini-label {
+  font-size: 8px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.35);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ppp-elo-mini-val {
+  font-size: 1.125rem;
+  font-weight: 800;
+}
+
+/* ─── Win rate bar ───────────────────────────────────────────────────────── */
+.ppp-winrate-bar {
+  display: flex;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  gap: 1px;
+  margin-top: 0.75rem;
+}
+
+.ppp-wr-w { background: #22c55e; height: 100%; transition: width 0.6s; }
+.ppp-wr-d { background: #f59e0b; height: 100%; transition: width 0.6s; }
+.ppp-wr-l { background: #ef4444; height: 100%; transition: width 0.6s; }
+
+.ppp-wr-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  font-weight: 600;
+  margin-top: 6px;
+}
+
+/* ─── Head-to-Head ───────────────────────────────────────────────────────── */
+.ppp-h2h-card {
+  background: linear-gradient(135deg, rgba(168,85,247,0.06), rgba(226,48,255,0.04));
+  border: 1px solid rgba(168,85,247,0.12);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+
+.ppp-h2h-scores {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 1rem;
+}
+
+.ppp-h2h-player {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.ppp-h2h-player-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.ppp-h2h-score {
+  font-size: 2.5rem;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.ppp-h2h-score.me { color: #a855f7; }
+.ppp-h2h-score.them { color: rgba(255,255,255,0.6); }
+
+.ppp-h2h-vs {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.25);
+  letter-spacing: 0.08em;
+  padding: 0 1rem;
+}
+
+.ppp-h2h-draws {
+  text-align: center;
+  font-size: 11px;
+  color: rgba(255,255,255,0.35);
+  font-weight: 500;
+}
+
+.ppp-h2h-bar {
+  display: flex;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 0.75rem 0;
+  gap: 1px;
+}
+
+.ppp-h2h-me { background: #a855f7; height: 100%; transition: width 0.6s; }
+.ppp-h2h-draw { background: rgba(255,255,255,0.2); height: 100%; }
+.ppp-h2h-them { background: rgba(255,255,255,0.4); height: 100%; transition: width 0.6s; }
+
+.ppp-h2h-no-games {
+  text-align: center;
+  color: rgba(255,255,255,0.25);
+  font-size: 12px;
+  padding: 1rem 0;
+}
+
+/* ─── Recent games ───────────────────────────────────────────────────────── */
+.ppp-games-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ppp-game-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 10px;
+  transition: background 0.2s, border-color 0.2s;
+  cursor: default;
+}
+
+.ppp-game-item:hover {
+  background: rgba(168,85,247,0.05);
+  border-color: rgba(168,85,247,0.15);
+}
+
+.ppp-game-tc {
+  font-size: 9px;
+  font-weight: 800;
+  color: #a855f7;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  min-width: 36px;
+}
+
+.ppp-game-players {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.7);
+  overflow: hidden;
+  font-weight: 500;
+}
+
+.ppp-game-players span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ppp-game-sep {
+  color: rgba(255,255,255,0.2);
+  flex-shrink: 0;
+}
+
+.ppp-game-date {
+  font-size: 10px;
+  color: rgba(255,255,255,0.25);
+  white-space: nowrap;
+}
+
+.ppp-game-result {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.ppp-game-result.win  { background: rgba(34,197,94,0.15);  color: #22c55e; }
+.ppp-game-result.loss { background: rgba(239,68,68,0.15);  color: #ef4444; }
+.ppp-game-result.draw { background: rgba(148,163,184,0.12); color: #94a3b8; }
+
+/* ─── Loading ─────────────────────────────────────────────────────────────── */
+.ppp-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 5rem 2rem;
+  color: rgba(255,255,255,0.35);
+  font-size: 13px;
+}
+
+.ppp-spin {
+  animation: ppp-spin 1s linear infinite;
+}
+
+@keyframes ppp-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ─── Empty state ─────────────────────────────────────────────────────────── */
+.ppp-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 2rem;
+  color: rgba(255,255,255,0.25);
+  font-size: 12px;
+  text-align: center;
+}

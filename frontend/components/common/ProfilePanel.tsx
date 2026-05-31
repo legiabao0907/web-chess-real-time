@@ -20,9 +20,14 @@ import {
   TrendingUp,
   MessageCircle,
   History,
+  Eye,
+  ArrowRight,
+  Bell,
 } from "lucide-react";
 import { useProfileStore } from "@/store/useProfileStore";
 import { useChatStore } from "@/store/useChatStore";
+import { useFriendStore } from "@/store/useFriendStore";
+import Link from "next/link";
 import "./ProfilePanel.css";
 
 // ─── Tab definitions ─────────────────────────────────────────────────────────
@@ -338,23 +343,83 @@ function EditTab() {
 
 // ─── Friends Tab ───────────────────────────────────────────────────────────
 function FriendsTab() {
-  const profile = useProfileStore((s) => s.profile);
-  const { closeProfile } = useProfileStore();
+  const { closeProfile, openPublicProfile } = useProfileStore();
   const { openChat, onlineUsers } = useChatStore();
-  const friends = profile?.friends ?? [];
+  const { friends, pendingRequests, isLoadingFriends, loadFriends, loadPendingRequests } = useFriendStore();
+
+  useEffect(() => {
+    loadFriends();
+    loadPendingRequests();
+  }, []);
 
   const handleChat = (friendId: string, friendUsername: string) => {
     closeProfile();
     openChat(friendId, friendUsername);
   };
 
+  const handleView = (friendId: string) => {
+    closeProfile();
+    openPublicProfile(friendId);
+  };
+
   return (
     <div className="pp-tab-content">
+      {/* Pending requests preview */}
+      {pendingRequests.length > 0 && (
+        <>
+          <div className="pp-section-title">
+            <Bell size={14} />
+            PENDING REQUESTS ({pendingRequests.length})
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            {pendingRequests.slice(0, 3).map((req) => (
+              <div key={req.id} className="pp-friend-card" style={{ justifyContent: "space-between" }}>
+                <div className="pp-friend-avatar">
+                  <img
+                    src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${req.username}`}
+                    alt={req.username}
+                    style={{ width: "100%", height: "100%", borderRadius: "50%" }}
+                  />
+                </div>
+                <div className="pp-friend-info">
+                  <span className="pp-friend-name">{req.username}</span>
+                  <span className="pp-friend-elo" style={{ color: eloColor(req.eloBlitz) }}>
+                    {req.eloBlitz} Blitz
+                  </span>
+                </div>
+                <span style={{ fontSize: "10px", color: "#f59e0b", fontWeight: 600 }}>Pending</span>
+              </div>
+            ))}
+          </div>
+          <Link
+            href="/friends"
+            onClick={closeProfile}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "5px",
+              fontSize: "11px",
+              color: "#a855f7",
+              fontWeight: 600,
+              textDecoration: "none",
+            }}
+          >
+            <Bell size={11} /> Manage {pendingRequests.length} pending request{pendingRequests.length > 1 ? "s" : ""} →
+          </Link>
+        </>
+      )}
+
+      {/* Friends list section title */}
       <div className="pp-section-title">
         <Users size={14} />
         FRIENDS ({friends.length})
       </div>
-      {friends.length === 0 ? (
+
+      {isLoadingFriends ? (
+        <div className="pp-loading" style={{ padding: "2rem" }}>
+          <Loader2 size={24} className="pp-spin" color="#a855f7" />
+        </div>
+      ) : friends.length === 0 ? (
         <div className="pp-empty-state">
           <Users size={32} opacity={0.3} />
           <p>No friends yet</p>
@@ -364,20 +429,16 @@ function FriendsTab() {
         </div>
       ) : (
         <div className="pp-friends-list">
-          {friends.map((f) => {
+          {friends.slice(0, 6).map((f) => {
             const isOnline = onlineUsers.has(f.id);
             return (
               <div key={f.id} className="pp-friend-card">
                 <div className="pp-friend-avatar">
-                  {f.avatarUrl ? (
-                    <img src={f.avatarUrl} alt={f.username} />
-                  ) : (
-                    <img
-                      src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${f.username}`}
-                      alt={f.username}
-                      style={{ width: "100%", height: "100%", borderRadius: "50%" }}
-                    />
-                  )}
+                  <img
+                    src={f.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${f.username}`}
+                    alt={f.username}
+                    style={{ width: "100%", height: "100%", borderRadius: "50%" }}
+                  />
                   <span className={`pp-online-dot ${isOnline ? "online" : "offline"}`} />
                 </div>
                 <div className="pp-friend-info">
@@ -386,41 +447,21 @@ function FriendsTab() {
                     {f.eloBlitz} Blitz
                   </span>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span
-                    style={{
-                      fontSize: "11px",
-                      color: isOnline ? "#22c55e" : "rgba(255,255,255,0.3)",
-                      minWidth: "44px",
-                      textAlign: "right",
-                    }}
-                  >
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ fontSize: "11px", color: isOnline ? "#22c55e" : "rgba(255,255,255,0.3)", minWidth: "44px", textAlign: "right" }}>
                     {isOnline ? "● Online" : "○ Offline"}
                   </span>
                   <button
+                    onClick={() => handleView(f.id)}
+                    title="View profile"
+                    style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", color: "rgba(255,255,255,0.6)", cursor: "pointer", padding: "5px 7px", display: "flex", alignItems: "center", transition: "all 0.2s", flexShrink: 0 }}
+                  >
+                    <Eye size={12} />
+                  </button>
+                  <button
                     onClick={() => handleChat(f.id, f.username)}
                     title="Send message"
-                    style={{
-                      background: "rgba(168,85,247,0.15)",
-                      border: "1px solid rgba(168,85,247,0.3)",
-                      borderRadius: "8px",
-                      color: "#a855f7",
-                      cursor: "pointer",
-                      padding: "5px 8px",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "4px",
-                      fontSize: "11px",
-                      fontWeight: 600,
-                      transition: "all 0.2s",
-                      flexShrink: 0,
-                    }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.background = "rgba(168,85,247,0.3)";
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLElement).style.background = "rgba(168,85,247,0.15)";
-                    }}
+                    style={{ background: "rgba(168,85,247,0.15)", border: "1px solid rgba(168,85,247,0.3)", borderRadius: "8px", color: "#a855f7", cursor: "pointer", padding: "5px 8px", display: "flex", alignItems: "center", gap: "4px", fontSize: "11px", fontWeight: 600, transition: "all 0.2s", flexShrink: 0 }}
                   >
                     <MessageCircle size={12} />
                     Chat
@@ -431,6 +472,31 @@ function FriendsTab() {
           })}
         </div>
       )}
+
+      {/* View all link */}
+      <Link
+        href="/friends"
+        onClick={closeProfile}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "6px",
+          padding: "0.75rem",
+          background: "rgba(168,85,247,0.08)",
+          border: "1px solid rgba(168,85,247,0.2)",
+          borderRadius: "12px",
+          color: "#a855f7",
+          fontSize: "12px",
+          fontWeight: 700,
+          textDecoration: "none",
+          letterSpacing: "0.04em",
+          transition: "background 0.2s",
+          marginTop: "0.5rem",
+        }}
+      >
+        <Users size={13} /> VIEW ALL FRIENDS <ArrowRight size={13} />
+      </Link>
     </div>
   );
 }

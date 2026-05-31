@@ -32,6 +32,16 @@ export class TournamentGateway
   private userSockets = new Map<string, Set<string>>();
   // socketId -> { userId, tournamentId }
   private clients = new Map<string, { userId: string; tournamentId?: string }>();
+  // tournamentId -> nextRoundAt timestamp
+  private nextRoundTimers = new Map<string, number>();
+
+  setNextRoundTimer(tournamentId: string, timestamp: number) {
+    this.nextRoundTimers.set(tournamentId, timestamp);
+  }
+
+  clearNextRoundTimer(tournamentId: string) {
+    this.nextRoundTimers.delete(tournamentId);
+  }
 
   constructor(private readonly tournamentService: TournamentService) {}
 
@@ -91,6 +101,14 @@ export class TournamentGateway
       const tournament = await this.tournamentService.getTournament(tournamentId);
       const rounds = await this.tournamentService.getTournamentRounds(tournamentId);
       client.emit('tournament_state', { tournament, rounds });
+
+      const nextRoundAt = this.nextRoundTimers.get(tournamentId);
+      if (nextRoundAt) {
+        const remainingMs = nextRoundAt - Date.now();
+        if (remainingMs > 0) {
+          client.emit('tournament_update', { type: 'round_countdown', countdownMs: remainingMs });
+        }
+      }
     } catch {}
   }
 

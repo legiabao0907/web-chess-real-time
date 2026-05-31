@@ -23,6 +23,7 @@ export function useFriendChat({ userId, username, enabled = true }: UseFriendCha
     pendingFriend,
     setPendingFriend,
     registerSendFns,
+    upsertRoomForDirect,
   } = useChatStore();
 
   useEffect(() => {
@@ -37,22 +38,32 @@ export function useFriendChat({ userId, username, enabled = true }: UseFriendCha
 
     socketRef.current = socket;
 
+    // ── Kết nối thành công ──────────────────────────────────────────────────
     socket.on("connect", () => {
       console.log("💬 Chat socket connected:", socket.id);
-      // Identify ourselves
+      // Xác thực danh tính ngay khi kết nối để lưu vào Redis chess:online_users
       socket.emit("identify", { userId, username });
     });
 
     socket.on("identified", () => {
-      console.log("💬 Chat socket identified");
+      console.log("💬 Chat socket identified — saved to Redis online_users");
     });
 
     socket.on("disconnect", () => {
       console.log("💬 Chat socket disconnected");
     });
 
-    // DM room joined: receive roomId + history
-    socket.on("dm_joined", (data: { roomId: string; friendId: string; friendUsername: string; history: ChatMessage[] }) => {
+    socket.on("connect_error", (err) => {
+      console.error("💬 Chat socket connection error:", err.message);
+    });
+
+    // ── DM room joined: nhận roomId + lịch sử ─────────────────────────────
+    socket.on("dm_joined", (data: {
+      roomId: string;
+      friendId: string;
+      friendUsername: string;
+      history: ChatMessage[];
+    }) => {
       const room: ChatRoom = {
         roomId: data.roomId,
         friendId: data.friendId,
@@ -64,19 +75,58 @@ export function useFriendChat({ userId, username, enabled = true }: UseFriendCha
       setPendingFriend(null);
     });
 
-    // Incoming DM message
+    // ── Tin nhắn DM mới (room-based: send_dm → dm_message) ─────────────────
     socket.on("dm_message", (msg: ChatMessage) => {
       addMessage(msg.roomId, msg);
     });
 
-    // History loaded
+    // ── Tin nhắn DM trực tiếp (Redis-based: send_direct_message → receive_direct_message) ──
+    socket.on(
+      "receive_direct_message",
+      (payload: {
+        fromUserId: string;
+        fromUsername: string;
+        toUserId: string;
+        message: string;
+        roomId: string;
+        messageId: string;
+        createdAt: number;
+      }) => {
+        console.log("📩 receive_direct_message:", payload);
+
+        // Xây dựng ChatMessage để đẩy vào store
+        const msg: ChatMessage = {
+          id: payload.messageId,
+          roomId: payload.roomId,
+          senderId: payload.fromUserId,
+          senderUsername: payload.fromUsername,
+          content: payload.message,
+          createdAt: payload.createdAt,
+        };
+
+        // Nếu room chưa tồn tại trong store (người nhận online nhưng chưa mở chat),
+        // tạo room tạm để hiển thị unread badge
+        upsertRoomForDirect({
+          roomId: payload.roomId,
+          friendId: payload.fromUserId === userId ? payload.toUserId : payload.fromUserId,
+          friendUsername: payload.fromUserId === userId ? "" : payload.fromUsername,
+          message: msg,
+        });
+      },
+    );
+
+    // ── Lỗi từ server ──────────────────────────────────────────────────────
+    socket.on("dm_error", (data: { error: string }) => {
+      console.error("💬 DM Error:", data.error);
+    });
+
+    // ── Lịch sử tin nhắn ──────────────────────────────────────────────────
     socket.on("dm_history", (data: { roomId: string; history: ChatMessage[] }) => {
       setHistory(data.roomId, data.history);
     });
 
-    // Typing indicator
+    // ── Typing indicator ───────────────────────────────────────────────────
     socket.on("user_typing", (data: { userId: string; username: string; isTyping: boolean }) => {
-      // Find room with this user
       const roomEntry = Object.values(useChatStore.getState().rooms).find(
         (r) => r.friendId === data.userId,
       );
@@ -85,7 +135,7 @@ export function useFriendChat({ userId, username, enabled = true }: UseFriendCha
       }
     });
 
-    // Online/offline status
+    // ── Online/offline status ──────────────────────────────────────────────
     socket.on("user_status", (data: { userId: string; username: string; isOnline: boolean }) => {
       setUserOnline(data.userId, data.isOnline);
     });
@@ -95,7 +145,7 @@ export function useFriendChat({ userId, username, enabled = true }: UseFriendCha
     };
   }, [userId, enabled]);
 
-  // When pendingFriend changes (user clicked "Message" on a friend), join DM
+  // Khi pendingFriend thay đổi (user click "Message" trên profile bạn bè), join DM room
   useEffect(() => {
     if (!pendingFriend || !socketRef.current?.connected) return;
     socketRef.current.emit("join_dm", {
@@ -108,6 +158,9 @@ export function useFriendChat({ userId, username, enabled = true }: UseFriendCha
 
   // ── Actions ──────────────────────────────────────────────────────────────
 
+  /**
+   * Gửi tin nhắn theo phương thức room-based (cần join_dm trước)
+   */
   const sendMessage = useCallback(
     (roomId: string, content: string) => {
       if (!socketRef.current?.connected || !content.trim()) return;
@@ -119,6 +172,24 @@ export function useFriendChat({ userId, username, enabled = true }: UseFriendCha
       });
     },
     [userId, username],
+  );
+
+  /**
+   * Gửi tin nhắn theo phương thức Redis-based routing (send_direct_message)
+   * Không cần join room trước — server tự tra cứu socketId từ Redis
+   */
+  const sendDirectMessage = useCallback(
+    (toUserId: string, message: string) => {
+      if (!socketRef.current?.connected || !message.trim()) {
+        console.warn("💬 sendDirectMessage: socket not connected or message empty");
+        return;
+      }
+      socketRef.current.emit("send_direct_message", {
+        toUserId,
+        message: message.trim(),
+      });
+    },
+    [],
   );
 
   const sendTyping = useCallback(
@@ -136,11 +207,10 @@ export function useFriendChat({ userId, username, enabled = true }: UseFriendCha
     [userId, username],
   );
 
-  // Register send functions into the store so ChatDrawer can use them
-  // without creating its own socket connection
+  // Đăng ký send functions vào store để ChatDrawer có thể gọi mà không cần socket riêng
   useEffect(() => {
-    registerSendFns(sendMessage, sendTyping);
-  }, [sendMessage, sendTyping, registerSendFns]);
+    registerSendFns(sendMessage, sendTyping, sendDirectMessage);
+  }, [sendMessage, sendTyping, sendDirectMessage, registerSendFns]);
 
-  return { openDm, sendMessage, sendTyping, socket: socketRef };
+  return { openDm, sendMessage, sendDirectMessage, sendTyping, socket: socketRef };
 }

@@ -68,15 +68,15 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: http://172.168.8.237:8080/api
-        NEXT_PUBLIC_BACKEND_URL: http://172.168.8.237:8080
+        NEXT_PUBLIC_API_URL: http://localhost:8080/api
+        NEXT_PUBLIC_BACKEND_URL: http://localhost:8080
     container_name: chess_frontend
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://172.168.8.237:8080/api
-      - NEXT_PUBLIC_BACKEND_URL=http://172.168.8.237:8080
+      - NEXT_PUBLIC_API_URL=http://localhost:8080/api
+      - NEXT_PUBLIC_BACKEND_URL=http://localhost:8080
     depends_on:
       - backend
     networks:

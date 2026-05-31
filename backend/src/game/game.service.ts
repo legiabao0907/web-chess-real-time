@@ -514,6 +514,27 @@ export class GameService implements OnModuleInit {
       .orderBy(desc(games.createdAt));
   }
 
+  /** Public game history — same as getGameHistory but for any userId (no auth required) */
+  async getPublicGameHistory(targetUserId: string) {
+    return this.db
+      .select({
+        id: games.id,
+        whiteId: games.whiteId,
+        blackId: games.blackId,
+        whiteUsername: games.whiteUsername,
+        blackUsername: games.blackUsername,
+        winnerId: games.winnerId,
+        status: games.status,
+        timeControl: games.timeControl,
+        finalFen: games.finalFen,
+        createdAt: games.createdAt,
+      })
+      .from(games)
+      .where(or(eq(games.whiteId, targetUserId), eq(games.blackId, targetUserId)))
+      .orderBy(desc(games.createdAt))
+      .limit(30);
+  }
+
   async getGameById(gameId: string) {
     const result = await this.db
       .select({

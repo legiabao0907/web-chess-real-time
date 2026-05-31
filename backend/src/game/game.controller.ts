@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, UseGuards, Req, NotFoundException, Logger } from '@nestjs/common';
+import { Controller, Get, Param, UseGuards, Req, NotFoundException, Logger } from '@nestjs/common';
 import { GameService } from './game.service';
 import { JwtAuthGuard } from '../user/guards/jwt-auth.guard';
 import { Request } from 'express';
@@ -18,6 +18,14 @@ export class GameController {
   async getHistory(@Req() req: AuthRequest) {
     const games = await this.gameService.getGameHistory(req.user.id);
     this.logger.log(`getHistory for user ${req.user.id}: found ${games.length} games`);
+    return games;
+  }
+
+  // GET /game/history/:userId — public game history for any user (for Public Profile Panel)
+  @Get('history/:userId')
+  async getPublicHistory(@Param('userId') userId: string) {
+    const games = await this.gameService.getPublicGameHistory(userId);
+    this.logger.log(`getPublicHistory for user ${userId}: found ${games.length} games`);
     return games;
   }
 

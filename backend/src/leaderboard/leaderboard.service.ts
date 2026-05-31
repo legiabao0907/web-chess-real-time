@@ -1,6 +1,10 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import Redis from 'ioredis';
+import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { eq } from 'drizzle-orm';
 import { REDIS_CLIENT } from '../redis/redis.module';
+import { DRIZZLE } from '../drizzle/drizzle.module';
+import { users } from '../drizzle/schema/users.schema';
 import {
   LeaderboardEntry,
   LeaderboardCategory,
@@ -18,6 +22,7 @@ export class LeaderboardService {
 
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    @Inject(DRIZZLE) private readonly db: NodePgDatabase<any>,
   ) {}
 
   private leaderboardKey(category: LeaderboardCategory) {
@@ -60,6 +65,21 @@ export class LeaderboardService {
 
     // Update sorted set with ELO as score
     await this.redis.zadd(this.leaderboardKey(category), newElo, userId);
+
+    // Also persist ELO to PostgreSQL users table
+    const colName = 
+      category === 'blitz' ? 'blitzRating' :
+      category === 'bullet' ? 'bulletRating' :
+      'rapidRating';
+    
+    try {
+      await (this.db as any)
+        .update(users)
+        .set({ [colName]: newElo })
+        .where(eq(users.id, userId));
+    } catch (e: any) {
+      this.logger.error(`Failed to persist ELO for ${username}: ${e.message}`);
+    }
 
     this.logger.log(`Leaderboard updated: ${username} ${category} ELO=${newElo} (${eloDelta >= 0 ? '+' : ''}${eloDelta})`);
   }

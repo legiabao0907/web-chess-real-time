@@ -28,12 +28,16 @@ interface ChatState {
   activeRoomId: string | null;
   onlineUsers: Set<string>; // Set of userIds online
 
-  // Socket send functions — registered by useFriendChat in layout so ChatDrawer can use them
+  // Socket send functions — được đăng ký bởi useFriendChat ở layout
+  // để ChatDrawer có thể gọi mà không cần tạo socket riêng
   _sendMessage: ((roomId: string, content: string) => void) | null;
   _sendTyping: ((roomId: string, isTyping: boolean) => void) | null;
+  _sendDirectMessage: ((toUserId: string, message: string) => void) | null;
+
   registerSendFns: (
     sendMessage: (roomId: string, content: string) => void,
     sendTyping: (roomId: string, isTyping: boolean) => void,
+    sendDirectMessage: (toUserId: string, message: string) => void,
   ) => void;
 
   // Actions
@@ -47,7 +51,19 @@ interface ChatState {
   setTyping: (roomId: string, isTyping: boolean) => void;
   setUserOnline: (userId: string, isOnline: boolean) => void;
 
-  // Pending: track which friend we want to open chat with (before roomId is known)
+  /**
+   * Upsert room khi nhận receive_direct_message:
+   * - Nếu room đã tồn tại → thêm tin nhắn vào
+   * - Nếu chưa → tạo room mới tạm thời với tin nhắn đó (hiện unread badge)
+   */
+  upsertRoomForDirect: (params: {
+    roomId: string;
+    friendId: string;
+    friendUsername: string;
+    message: ChatMessage;
+  }) => void;
+
+  // Pending: track bạn bè muốn mở chat (trước khi có roomId)
   pendingFriend: { friendId: string; friendUsername: string } | null;
   setPendingFriend: (friend: { friendId: string; friendUsername: string } | null) => void;
 }
@@ -60,9 +76,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   pendingFriend: null,
   _sendMessage: null,
   _sendTyping: null,
+  _sendDirectMessage: null,
 
-  registerSendFns: (sendMessage, sendTyping) => {
-    set({ _sendMessage: sendMessage, _sendTyping: sendTyping });
+  registerSendFns: (sendMessage, sendTyping, sendDirectMessage) => {
+    set({
+      _sendMessage: sendMessage,
+      _sendTyping: sendTyping,
+      _sendDirectMessage: sendDirectMessage,
+    });
   },
 
   openChat: (friendId, friendUsername) => {
@@ -147,10 +168,48 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
   },
 
+  upsertRoomForDirect: ({ roomId, friendId, friendUsername, message }) => {
+    set((state) => {
+      const existing = state.rooms[roomId];
+      const isActive = state.activeRoomId === roomId && state.isOpen;
+
+      if (existing) {
+        // Room đã tồn tại — append tin nhắn, tăng unread nếu không active
+        return {
+          rooms: {
+            ...state.rooms,
+            [roomId]: {
+              ...existing,
+              messages: [...existing.messages, message],
+              lastMessage: message.content,
+              lastMessageAt: message.createdAt,
+              unreadCount: isActive ? 0 : existing.unreadCount + 1,
+              isTyping: false,
+            },
+          },
+        };
+      }
+
+      // Room chưa tồn tại — tạo mới (người nhận online nhưng chưa mở chat)
+      const newRoom: ChatRoom = {
+        roomId,
+        friendId,
+        friendUsername: friendUsername || 'Unknown',
+        messages: [message],
+        unreadCount: isActive ? 0 : 1,
+        lastMessage: message.content,
+        lastMessageAt: message.createdAt,
+      };
+      return {
+        rooms: { ...state.rooms, [roomId]: newRoom },
+      };
+    });
+  },
+
   setPendingFriend: (friend) => set({ pendingFriend: friend }),
 }));
 
-// Total unread count helper
+// Helper: tổng số unread
 export const useTotalUnread = () =>
   useChatStore((state) =>
     Object.values(state.rooms).reduce((sum, r) => sum + r.unreadCount, 0),

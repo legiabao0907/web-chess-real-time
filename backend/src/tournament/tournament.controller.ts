@@ -174,4 +174,38 @@ export class TournamentController {
 
     return result;
   }
+
+  // PATCH /tournament/:id/finish — end tournament early
+  @Patch(':id/finish')
+  @UseGuards(JwtAuthGuard)
+  async finish(@Req() req: AuthRequest, @Param('id') id: string) {
+    const result = await this.tournamentService.finishTournament(id, req.user.id);
+
+    // Broadcast
+    const tournament = await this.tournamentService.getTournament(id);
+    const rounds = await this.tournamentService.getTournamentRounds(id);
+    this.tournamentGateway.broadcastTournamentUpdate(id, {
+      type: 'tournament_finished',
+      tournament,
+      rounds,
+    });
+
+    return result;
+  }
+
+  // DELETE /tournament/:id — delete tournament (creator or admin only)
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard)
+  async deleteTournament(@Req() req: AuthRequest, @Param('id') id: string) {
+    // Check if user is admin
+    const isAdmin = await this.tournamentService.isAdmin(req.user.id);
+    const result = await this.tournamentService.deleteTournament(
+      id,
+      req.user.id,
+      isAdmin,
+    );
+    // Clean up timer if exists
+    this.tournamentGateway.clearNextRoundTimer(id);
+    return result;
+  }
 }

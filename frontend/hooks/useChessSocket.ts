@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
+import { getUser, saveUser } from "@/lib/auth";
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8080";
 
@@ -31,6 +32,10 @@ export interface GameState {
   isBot?: boolean;
   botDifficulty?: Difficulty;
   botColor?: "w" | "b";
+  // ELO change after game ends
+  eloChange?: number;
+  newElo?: number;
+  opponentEloChange?: number;
 }
 
 export interface ChatMessage {
@@ -156,15 +161,33 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
       });
     });
 
-    socket.on("game_over", (data: { gameId: string; status: string; winner?: string; message: string }) => {
+    socket.on("game_over", (data: { gameId: string; status: string; winner?: string; message: string; whiteEloChange?: number; blackEloChange?: number; whiteNewElo?: number; blackNewElo?: number }) => {
       setGame((prev) => {
         if (!prev) return null;
+        const myColor = prev.whiteId === userId ? "white" : "black";
+        const myNewElo = myColor === "white" ? data.whiteNewElo : data.blackNewElo;
         const updated = {
           ...prev,
           status: data.status as GameStatus,
           winner: data.winner as "white" | "black" | "draw" | undefined,
+          eloChange: myColor === "white" ? data.whiteEloChange : data.blackEloChange,
+          newElo: myNewElo,
+          opponentEloChange: myColor === "white" ? data.blackEloChange : data.whiteEloChange,
         };
         sessionStorage.removeItem(SESSION_GAME_KEY);
+
+        // Update cached user ELO in localStorage so profile/UI reflects new rating
+        if (myNewElo !== undefined && !prev.isBot) {
+          const user = getUser();
+          if (user) {
+            const tc = prev.timeControl || '';
+            if (tc.startsWith('bullet')) (user as any).eloBullet = myNewElo;
+            else if (tc.startsWith('rapid')) (user as any).eloRapid = myNewElo;
+            else user.eloBlitz = myNewElo;
+            saveUser(user);
+          }
+        }
+
         return updated;
       });
       setGameStatus(data.status as GameStatus);

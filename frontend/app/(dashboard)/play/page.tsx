@@ -355,11 +355,49 @@ function PlayPageContent() {
           {/* Game Over Overlay */}
           {game?.status && game.status !== "active" && (
             <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/60 backdrop-blur-md rounded-lg m-4">
-              <div className="text-center p-8 bg-[#1f2937] rounded-xl shadow-2xl border border-[#a855f7]/30 min-w-[300px]">
-                <h2 className="text-4xl font-bold text-white mb-2">Game Over</h2>
-                <p className="text-2xl text-[#a855f7] mb-6 font-semibold">
-                  {game.winner === "draw" ? "Draw!" : `${game.winner === "white" ? game.whiteUsername : game.blackUsername} Wins!`}
+              <div className="text-center p-8 bg-[#1f2937] rounded-xl shadow-2xl border border-[#a855f7]/30 min-w-[320px]">
+                {/* Result icon */}
+                <div className="text-5xl mb-3">
+                  {game.winner === "draw" ? "🤝" 
+                    : game.isBot ? (game.winner === "white" ? "🏆" : "🤖")
+                    : (game.winner === "white") === (game.whiteId === user?.id) ? "🏆" : "💔"}
+                </div>
+
+                {/* Result text */}
+                <h2 className="text-3xl font-bold text-white mb-1">
+                  {game.winner === "draw" ? "Draw!" 
+                    : `${game.winner === "white" ? game.whiteUsername : game.blackUsername} Wins!`}
+                </h2>
+                <p className="text-sm text-white/40 mb-4">
+                  {game.status === "resigned" ? "by resignation" 
+                    : game.status === "draw" ? "by agreement" 
+                    : game.status === "finished" ? "by checkmate" : ""}
                 </p>
+
+                {/* ELO Change (only for non-bot games) */}
+                {!game.isBot && game.eloChange !== undefined && (
+                  <div className="my-4 py-4 px-6 rounded-xl bg-white/5 border border-white/10">
+                    <div className="flex items-center justify-center gap-2 text-sm text-white/60 mb-1">
+                      <span>ELO</span>
+                      <span className="text-white/40">{(game.newElo ?? 0) - (game.eloChange ?? 0)}</span>
+                      <span className="text-white/40">→</span>
+                      <span className="text-white font-bold text-base">{game.newElo}</span>
+                    </div>
+                    <div className={`text-2xl font-black ${
+                      (game.eloChange ?? 0) > 0 ? "text-green-400 drop-shadow-[0_0_8px_rgba(34,197,94,0.4)]" 
+                      : (game.eloChange ?? 0) < 0 ? "text-red-400 drop-shadow-[0_0_8px_rgba(248,113,113,0.4)]" 
+                      : "text-yellow-400"
+                    }`}>
+                      {(game.eloChange ?? 0) > 0 ? "+" : ""}{game.eloChange} ELO
+                    </div>
+                    {game.opponentEloChange !== undefined && (
+                      <div className="text-xs text-white/30 mt-1">
+                        Opponent {game.opponentEloChange > 0 ? "+" : ""}{game.opponentEloChange}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <button onClick={() => window.location.reload()}
                   className="px-8 py-3 bg-[#a855f7] hover:bg-[#9333ea] text-white rounded-lg transition font-bold block w-full">
                   Play Again

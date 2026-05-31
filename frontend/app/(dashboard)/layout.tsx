@@ -15,15 +15,18 @@ import {
   User,
   MessageCircle,
   Radio,
-  Bot
+  Bot,
+  Users,
 } from "lucide-react";
 import "./dashboard.css";
 import { clearTokens, clearCookies, getUser } from "@/lib/auth";
 import { useProfileStore } from "@/store/useProfileStore";
 import ProfilePanel from "@/components/common/ProfilePanel";
 import ChatDrawer from "@/components/common/ChatDrawer";
+import PublicProfilePanel from "@/components/common/PublicProfilePanel";
 import { useChatStore, useTotalUnread } from "@/store/useChatStore";
 import { useFriendChat } from "@/hooks/useFriendChat";
+import { useFriendStore } from "@/store/useFriendStore";
 import ClientOnly from "@/components/common/ClientOnly";
 
 export default function DashboardLayout({
@@ -35,6 +38,8 @@ export default function DashboardLayout({
   const { openProfile, profile, loadProfile } = useProfileStore();
   const { openChat } = useChatStore();
   const totalUnread = useTotalUnread();
+  const pendingCount = useFriendStore((s) => s.pendingRequests.length);
+  const { loadPendingRequests } = useFriendStore();
 
   // Use state to avoid SSR/client hydration mismatch (localStorage only available client-side)
   const [clientUser, setClientUser] = useState<ReturnType<typeof getUser>>(null);
@@ -53,6 +58,10 @@ export default function DashboardLayout({
     if (localUser && !profile) {
       loadProfile();
     }
+    // Load pending requests count for badge
+    if (localUser?.id) {
+      loadPendingRequests();
+    }
   }, []);
 
   const handleLogout = async () => {
@@ -68,6 +77,7 @@ export default function DashboardLayout({
     <>
       <ProfilePanel />
       <ChatDrawer />
+      <PublicProfilePanel myId={clientUser?.id} />
 
       <div className="dashboard-layout">
         {/* Sidebar */}
@@ -131,6 +141,28 @@ export default function DashboardLayout({
               <Link href="/archives" className="nav-link">
                 <History size={18} />
                 <span className="nav-text">ARCHIVES</span>
+              </Link>
+
+              <Link href="/friends" className="nav-link" style={{ position: 'relative' }}>
+                <Users size={18} style={{ color: pendingCount > 0 ? '#a855f7' : undefined }} />
+                <span className="nav-text">FRIENDS</span>
+                {pendingCount > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    top: '6px',
+                    right: '8px',
+                    background: '#ef4444',
+                    color: 'white',
+                    borderRadius: '12px',
+                    padding: '1px 6px',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    minWidth: '18px',
+                    textAlign: 'center',
+                  }}>
+                    {pendingCount > 9 ? '9+' : pendingCount}
+                  </span>
+                )}
               </Link>
 
               <Link href="/play-bot" className="nav-link" style={{ position: 'relative' }}>

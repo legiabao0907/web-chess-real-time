@@ -23,6 +23,22 @@ export interface UserProfile extends AuthUser {
   joinedAt?: string;
 }
 
+export interface PublicProfile {
+  id: string;
+  username: string;
+  eloBlitz: number;
+  eloRapid: number;
+  eloBullet?: number;
+  bio?: string | null;
+  country?: string | null;
+  avatarUrl?: string | null;
+  totalGames: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  createdAt: string;
+}
+
 interface ProfileState {
   // Panel visibility
   isOpen: boolean;
@@ -37,6 +53,12 @@ interface ProfileState {
   // Edit form
   editForm: Partial<UserProfile>;
 
+  // Public profile panel (viewing another user)
+  publicProfile: PublicProfile | null;
+  publicProfileUserId: string | null;
+  isPublicProfileOpen: boolean;
+  isPublicProfileLoading: boolean;
+
   // Actions
   openProfile: () => void;
   closeProfile: () => void;
@@ -45,6 +67,10 @@ interface ProfileState {
   updateEditForm: (fields: Partial<UserProfile>) => void;
   saveProfile: () => Promise<void>;
   uploadAvatar: (file: File) => Promise<void>;
+
+  // Public profile actions
+  openPublicProfile: (userId: string) => Promise<void>;
+  closePublicProfile: () => void;
 }
 
 export const useProfileStore = create<ProfileState>((set, get) => ({
@@ -55,6 +81,10 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   isSaving: false,
   error: null,
   editForm: {},
+  publicProfile: null,
+  publicProfileUserId: null,
+  isPublicProfileOpen: false,
+  isPublicProfileLoading: false,
 
   openProfile: () => {
     set({ isOpen: true });
@@ -77,17 +107,12 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
           eloBullet: 1150,
           bio: 'Chess strategist. Always looking for the winning move.',
           country: 'Vietnam',
-          totalGames: 248,
-          wins: 142,
-          losses: 78,
-          draws: 28,
+          totalGames: 0,
+          wins: 0,
+          losses: 0,
+          draws: 0,
           joinedAt: localUser.createdAt,
-          friends: [
-            { id: '1', username: 'Magnus_Fan', eloBlitz: 1850, isOnline: true },
-            { id: '2', username: 'KingSlayer99', eloBlitz: 1620, isOnline: false },
-            { id: '3', username: 'ChessWizard', eloBlitz: 2100, isOnline: true },
-            { id: '4', username: 'NightRider', eloBlitz: 1380, isOnline: false },
-          ],
+          friends: [],
         };
         set({ profile: mockProfile, editForm: mockProfile, isLoading: false });
       }
@@ -98,8 +123,8 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         const enriched: UserProfile = {
           ...apiProfile,
           eloBullet: (apiProfile as UserProfile).eloBullet ?? 1150,
-          bio: (apiProfile as UserProfile).bio ?? 'Chess strategist.',
-          country: (apiProfile as UserProfile).country ?? 'Vietnam',
+          bio: (apiProfile as UserProfile).bio ?? '',
+          country: (apiProfile as UserProfile).country ?? '',
           totalGames: (apiProfile as UserProfile).totalGames ?? 0,
           wins: (apiProfile as UserProfile).wins ?? 0,
           losses: (apiProfile as UserProfile).losses ?? 0,
@@ -195,4 +220,20 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       set({ error: 'Failed to upload avatar', isSaving: false });
     }
   },
+
+  // ── Public profile panel ─────────────────────────────────────────────────
+  openPublicProfile: async (userId: string) => {
+    set({ isPublicProfileOpen: true, isPublicProfileLoading: true, publicProfileUserId: userId });
+    try {
+      const data = await apiFetch<PublicProfile>(`/user/${userId}`);
+      set({ publicProfile: data, isPublicProfileLoading: false });
+    } catch {
+      set({ isPublicProfileLoading: false });
+    }
+  },
+
+  closePublicProfile: () => {
+    set({ isPublicProfileOpen: false, publicProfile: null, publicProfileUserId: null });
+  },
 }));
+

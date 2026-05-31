@@ -9,12 +9,13 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../drizzle/schema/schema';
 import { tournaments, tournamentParticipants } from '../drizzle/schema/tournament.schema';
 import { users } from '../drizzle/schema/users.schema';
-import { eq, and, desc, count } from 'drizzle-orm';
+import { eq, and, desc, count, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../drizzle/drizzle.module';
 import Redis from 'ioredis';
 import { REDIS_CLIENT } from '../redis/redis.module';
 import { v4 as uuidv4 } from 'uuid';
 import { TournamentSwissService } from './tournament-swiss.service';
+import { GameService } from '../game/game.service';
 
 // ── Swiss round/game types (stored in Redis) ─────────────────────────────────
 export interface TournamentGame {
@@ -46,6 +47,7 @@ export class TournamentService {
     @Inject(REDIS_CLIENT)
     private readonly redis: Redis,
     private readonly swissService: TournamentSwissService,
+    private readonly gameService: GameService,
   ) {}
 
   // ── Redis key helpers ─────────────────────────────────────────────────────
@@ -274,6 +276,23 @@ export class TournamentService {
       [],
     );
 
+    // ── Create actual GameState in Redis for each non-BYE game ───────────────
+    for (const game of round1.games) {
+      if (game.blackId !== 'BYE') {
+        const gameState = this.gameService.createGameState(
+          game.gameId,
+          { userId: game.whiteId, username: game.whiteUsername },
+          { userId: game.blackId, username: game.blackUsername },
+          t.timeControl,
+        );
+        (gameState as any).isTournament = true;
+        (gameState as any).tournamentId = tournamentId;
+        await this.gameService.saveGame(gameState);
+        await this.gameService.setUserCurrentGame(game.whiteId, game.gameId);
+        await this.gameService.setUserCurrentGame(game.blackId, game.gameId);
+      }
+    }
+
     // Save round to Redis
     await this.redis.setex(this.roundKey(tournamentId, 1), 86400 * 7, JSON.stringify(round1));
     await this.redis.set(this.currentRoundKey(tournamentId), '1');
@@ -282,7 +301,7 @@ export class TournamentService {
   }
 
   // ── Next Round — generate Swiss pairings based on results ────────────────
-  async nextRound(tournamentId: string, userId: string) {
+  async nextRound(tournamentId: string, userId?: string) {
     const [t] = await this.db
       .select()
       .from(tournaments)
@@ -290,7 +309,7 @@ export class TournamentService {
       .limit(1);
 
     if (!t) throw new NotFoundException('Tournament not found');
-    if (t.creatorId !== userId) throw new ForbiddenException('Only creator can advance rounds');
+    if (userId && t.creatorId !== userId) throw new ForbiddenException('Only creator can advance rounds');
     if (t.status !== 'ongoing') throw new ForbiddenException('Tournament is not ongoing');
 
     const currentRound = await this.getCurrentRound(tournamentId);
@@ -318,6 +337,10 @@ export class TournamentService {
     await this.applyRoundResults(tournamentId, currentRoundData);
 
     const nextRound = currentRound + 1;
+    if (nextRound > 7) {
+      await this.finishTournament(tournamentId, t.creatorId);
+      return { message: 'Tournament finished' };
+    }
 
     // Dùng TournamentSwissService để sinh cặp đấu theo đúng Hệ Thụy Sĩ
     const swissResult = await this.swissService.generateNextRoundPairs(
@@ -346,6 +369,28 @@ export class TournamentService {
       games,
       status: 'active',
     };
+
+    // ── Create actual GameState in Redis for each non-BYE game ───────────────
+    for (const game of games) {
+      if (game.blackId !== 'BYE') {
+        const gameState = this.gameService.createGameState(
+          game.gameId,
+          { userId: game.whiteId, username: game.whiteUsername },
+          { userId: game.blackId, username: game.blackUsername },
+          t.timeControl,
+        );
+        (gameState as any).isTournament = true;
+        (gameState as any).tournamentId = tournamentId;
+        await this.gameService.saveGame(gameState);
+        await this.gameService.setUserCurrentGame(game.whiteId, game.gameId);
+        await this.gameService.setUserCurrentGame(game.blackId, game.gameId);
+
+        // Store reverse lookup: gameId -> { tournamentId, round }
+        this.redis
+          .setex(`tournament:game:${game.gameId}`, 86400 * 7, JSON.stringify({ tournamentId, round: nextRound }))
+          .catch(() => {});
+      }
+    }
 
     await this.redis.setex(this.roundKey(tournamentId, nextRound), 86400 * 7, JSON.stringify(round));
     await this.redis.set(this.currentRoundKey(tournamentId), String(nextRound));
@@ -560,5 +605,105 @@ export class TournamentService {
           ),
         );
     }
+  }
+
+  // ── Finish tournament ─────────────────────────────────────────────────────
+  async finishTournament(tournamentId: string, userId: string) {
+    const [t] = await this.db
+      .select()
+      .from(tournaments)
+      .where(eq(tournaments.id, tournamentId))
+      .limit(1);
+
+    if (!t) throw new NotFoundException('Tournament not found');
+    if (t.creatorId !== userId) throw new ForbiddenException('Only creator can finish the tournament');
+    if (t.status === 'finished') throw new ConflictException('Tournament already finished');
+
+    await (this.db as any)
+      .update(tournaments)
+      .set({ status: 'finished', endTime: new Date() })
+      .where(eq(tournaments.id, tournamentId));
+
+    return { message: 'Tournament finished' };
+  }
+
+  // ── Check if user is admin ────────────────────────────────────────────────
+  async isAdmin(userId: string): Promise<boolean> {
+    const [user] = await this.db
+      .select({ role: users.role })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    return user?.role === 'admin';
+  }
+
+  // ── Delete tournament (creator or admin only, must be finished/upcoming) ──
+  async deleteTournament(
+    tournamentId: string,
+    userId: string,
+    isAdmin: boolean = false,
+  ): Promise<{ message: string }> {
+    const [t] = await this.db
+      .select()
+      .from(tournaments)
+      .where(eq(tournaments.id, tournamentId))
+      .limit(1);
+
+    if (!t) throw new NotFoundException('Tournament not found');
+    if (!isAdmin && t.creatorId !== userId)
+      throw new ForbiddenException('Only creator or admin can delete the tournament');
+    if (t.status === 'ongoing')
+      throw new ForbiddenException('Cannot delete an ongoing tournament. Finish it first.');
+
+    // ── 1. Cascade delete participants from PostgreSQL ──
+    await this.db
+      .delete(tournamentParticipants)
+      .where(eq(tournamentParticipants.tournamentId, tournamentId));
+
+    // ── 2. Nullify tournament references in games table ──
+    // (Keep game records intact, just remove tournament link)
+    // We use raw SQL since Drizzle schema may not have games table here
+    try {
+      await this.db.execute(
+        sql`UPDATE games SET "tournamentId" = NULL WHERE "tournamentId" = ${tournamentId}`,
+      );
+    } catch {
+      // games table might not exist in current migration — ignore
+    }
+
+    // ── 3. Delete tournament from PostgreSQL ──
+    await this.db
+      .delete(tournaments)
+      .where(eq(tournaments.id, tournamentId));
+
+    // ── 4. Clean up Redis keys ──
+    const pipeline = this.redis.pipeline();
+    // Delete all round keys (rounds 1–7)
+    for (let r = 1; r <= 7; r++) {
+      pipeline.del(this.roundKey(tournamentId, r));
+    }
+    pipeline.del(this.currentRoundKey(tournamentId));
+    // Delete game lookup keys — scan pattern
+    try {
+      const gameKeys = await this.redis.keys(`tournament:game:*`);
+      for (const key of gameKeys) {
+        const data = await this.redis.get(key);
+        if (data) {
+          const parsed = JSON.parse(data);
+          if (parsed.tournamentId === tournamentId) {
+            pipeline.del(key);
+            // Also delete the game state from Redis
+            if (parsed.gameId) {
+              pipeline.del(`game:${parsed.gameId}`);
+            }
+          }
+        }
+      }
+    } catch {
+      // Ignore Redis scan errors
+    }
+    await pipeline.exec();
+
+    return { message: 'Tournament deleted successfully' };
   }
 }

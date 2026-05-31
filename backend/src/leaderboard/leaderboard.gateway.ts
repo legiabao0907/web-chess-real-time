@@ -132,11 +132,11 @@ export class LeaderboardGateway
     loserElo: number;
     isDraw: boolean;
     category: LeaderboardCategory;
-  }): Promise<void> {
+  }): Promise<{ winnerChange: number; loserChange: number; winnerNewElo: number; loserNewElo: number }> {
     const { winnerId, winnerUsername, loserId, loserUsername, winnerElo, loserElo, isDraw, category } = params;
 
-    // ELO calculation (standard formula)
-    const K = 32; // K-factor
+    // ELO calculation (standard FIDE formula, K=32)
+    const K = 32;
     const expectedWinner = 1 / (1 + Math.pow(10, (loserElo - winnerElo) / 400));
     const expectedLoser = 1 / (1 + Math.pow(10, (winnerElo - loserElo) / 400));
 
@@ -146,12 +146,15 @@ export class LeaderboardGateway
     const winnerChange = Math.round(K * (winnerScore - expectedWinner));
     const loserChange = Math.round(K * (loserScore - expectedLoser));
 
+    const winnerNewElo = Math.max(100, winnerElo + winnerChange);
+    const loserNewElo = Math.max(100, loserElo + loserChange);
+
     // Update winner
     await this.leaderboardService.updateElo({
       userId: winnerId,
       username: winnerUsername,
       category,
-      newElo: Math.max(100, winnerElo + winnerChange),
+      newElo: winnerNewElo,
       eloDelta: winnerChange,
       wins: isDraw ? 0 : 1,
       losses: 0,
@@ -163,7 +166,7 @@ export class LeaderboardGateway
       userId: loserId,
       username: loserUsername,
       category,
-      newElo: Math.max(100, loserElo + loserChange),
+      newElo: loserNewElo,
       eloDelta: loserChange,
       wins: 0,
       losses: isDraw ? 0 : 1,
@@ -174,7 +177,9 @@ export class LeaderboardGateway
     await this.broadcastLeaderboard(category);
 
     this.logger.log(
-      `ELO updated: ${winnerUsername} ${winnerElo}->${winnerElo + winnerChange} | ${loserUsername} ${loserElo}->${loserElo + loserChange}`,
+      `ELO updated: ${winnerUsername} ${winnerElo}→${winnerNewElo} (${winnerChange >= 0 ? '+' : ''}${winnerChange}) | ${loserUsername} ${loserElo}→${loserNewElo} (${loserChange >= 0 ? '+' : ''}${loserChange})`,
     );
+
+    return { winnerChange, loserChange, winnerNewElo, loserNewElo };
   }
 }

@@ -331,6 +331,7 @@ export class TournamentSwissService {
         groupPaired,
         tournamentId,
         round,
+        players.length,
       );
 
       pairings.push(...newPairings.paired);
@@ -388,6 +389,7 @@ export class TournamentSwissService {
     groupPaired: Set<string>,
     tournamentId: string,
     round: number,
+    totalPlayers: number,
   ): { paired: SwissPairing[]; leftover: SwissPlayer[] } {
     const result: SwissPairing[] = [];
     const localPaired = new Set<string>();
@@ -424,7 +426,7 @@ export class TournamentSwissService {
           break;
         }
         const key = this.pairKey(topHalf[i].userId, perm[i].userId);
-        if (pairedSet.has(key)) {
+        if (totalPlayers >= 8 && pairedSet.has(key)) {
           valid = false;
           break;
         }

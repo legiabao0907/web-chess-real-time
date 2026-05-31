@@ -363,6 +363,7 @@ export class GameGateway
       isBot: game.isBot,
       botDifficulty: game.botDifficulty,
       botColor: game.botColor,
+      tournamentId: (game as any).tournamentId,
     });
 
     this.logger.log(`User ${username} rejoined game ${gameId}`);
@@ -475,12 +476,26 @@ export class GameGateway
       return;
     }
 
-    const resignData = {
+    // Calculate ELO changes BEFORE emitting game_over
+    let eloResult: any = null;
+    if (!game.isBot) {
+      eloResult = await this.triggerLeaderboardUpdate(game);
+    }
+
+    const resignData: any = {
       gameId,
       status: 'resigned',
       winner: game.winner,
       message: `${userId === game.whiteId ? game.whiteUsername : game.blackUsername} resigned`,
     };
+
+    if (eloResult) {
+      resignData.whiteEloChange = eloResult.whiteChange;
+      resignData.blackEloChange = eloResult.blackChange;
+      resignData.whiteNewElo = eloResult.whiteNewElo;
+      resignData.blackNewElo = eloResult.blackNewElo;
+    }
+
     this.server.to(gameId).emit('game_over', resignData);
 
     if (this.watchGateway) {
@@ -495,7 +510,6 @@ export class GameGateway
     if (!game.isBot) await this.gameService.clearUserCurrentGame(game.blackId);
 
     if (!game.isBot) {
-      await this.triggerLeaderboardUpdate(game);
       await this.recordTournamentGameResult(gameId, game);
     }
   }
@@ -576,12 +590,26 @@ export class GameGateway
     if (drawAccepted) {
       const updatedGame = await this.gameService.acceptDraw(gameId);
       if (updatedGame) {
-        this.server.to(gameId).emit('game_over', {
+        // Calculate ELO change for draw
+        let eloResult: any = null;
+        if (!updatedGame.isBot) {
+          eloResult = await this.triggerLeaderboardUpdate(updatedGame);
+        }
+
+        const drawData: any = {
           gameId,
           status: 'draw',
           winner: 'draw',
           message: 'Draw agreed by both players',
-        });
+        };
+        if (eloResult) {
+          drawData.whiteEloChange = eloResult.whiteChange;
+          drawData.blackEloChange = eloResult.blackChange;
+          drawData.whiteNewElo = eloResult.whiteNewElo;
+          drawData.blackNewElo = eloResult.blackNewElo;
+        }
+
+        this.server.to(gameId).emit('game_over', drawData);
         await this.gameService.clearUserCurrentGame(updatedGame.whiteId);
         await this.gameService.clearUserCurrentGame(updatedGame.blackId);
         await this.gameService.saveGameToDb(gameId);
@@ -605,12 +633,26 @@ export class GameGateway
     const game = await this.gameService.acceptDraw(gameId);
 
     if (game) {
-      this.server.to(gameId).emit('game_over', {
+      // Calculate ELO change for draw
+      let eloResult: any = null;
+      if (!game.isBot) {
+        eloResult = await this.triggerLeaderboardUpdate(game);
+      }
+
+      const drawData: any = {
         gameId,
         status: 'draw',
         winner: 'draw',
         message: 'Draw agreed',
-      });
+      };
+      if (eloResult) {
+        drawData.whiteEloChange = eloResult.whiteChange;
+        drawData.blackEloChange = eloResult.blackChange;
+        drawData.whiteNewElo = eloResult.whiteNewElo;
+        drawData.blackNewElo = eloResult.blackNewElo;
+      }
+
+      this.server.to(gameId).emit('game_over', drawData);
       await this.gameService.clearUserCurrentGame(game.whiteId);
       await this.gameService.clearUserCurrentGame(game.blackId);
       await this.gameService.saveGameToDb(gameId);
@@ -715,13 +757,28 @@ export class GameGateway
 
   /** Central game-over handler */
   private async handleGameOver(gameId: string, game: GameState, client?: Socket) {
-    const gameOverData = {
+    // Calculate ELO changes FIRST (before emitting game_over)
+    let eloResult: { whiteChange: number; blackChange: number; whiteNewElo: number; blackNewElo: number } | null = null;
+    if (!game.isBot) {
+      eloResult = await this.triggerLeaderboardUpdate(game);
+    }
+
+    const gameOverData: any = {
       gameId,
       status: game.status,
       winner: game.winner,
       pgn: game.pgn,
       message: this.getGameOverMessage(game.status, game.winner),
     };
+
+    // Attach ELO changes if available
+    if (eloResult) {
+      gameOverData.whiteEloChange = eloResult.whiteChange;
+      gameOverData.blackEloChange = eloResult.blackChange;
+      gameOverData.whiteNewElo = eloResult.whiteNewElo;
+      gameOverData.blackNewElo = eloResult.blackNewElo;
+    }
+
     this.server.to(gameId).emit('game_over', gameOverData);
 
     if (this.watchGateway) {
@@ -736,7 +793,6 @@ export class GameGateway
     await this.gameService.clearUserCurrentGame(game.whiteId);
     if (!game.isBot) {
       await this.gameService.clearUserCurrentGame(game.blackId);
-      await this.triggerLeaderboardUpdate(game);
       await this.recordTournamentGameResult(gameId, game);
     }
   }
@@ -763,6 +819,80 @@ export class GameGateway
           gameId,
           result,
         });
+
+        // Auto start next round if all games finished
+        const allFinished = round.games.every((g: any) => g.status === 'finished');
+        if (allFinished && tournament.status === 'ongoing') {
+          if (round.round >= 7) {
+            this.logger.log(`Tournament ${info.tournamentId} reached round 7. Finishing tournament.`);
+            try {
+              await this.tournamentService!.finishTournament(info.tournamentId, tournament.creatorId);
+              const updatedT = await this.tournamentService!.getTournament(info.tournamentId);
+              const updatedRounds = await this.tournamentService!.getTournamentRounds(info.tournamentId);
+              this.tournamentGateway!.broadcastTournamentUpdate(info.tournamentId, {
+                type: 'tournament_finished',
+                tournament: updatedT,
+                rounds: updatedRounds,
+              });
+            } catch (e: any) {
+              this.logger.error(`Error auto-finishing tournament: ${e.message}`);
+            }
+          } else {
+            this.logger.log(`All games in round ${round.round} finished. Auto-starting next round in 30s.`);
+            
+            // Broadcast countdown start to frontend
+            const nextRoundAt = Date.now() + 30000;
+            this.tournamentGateway!.setNextRoundTimer(info.tournamentId, nextRoundAt);
+            this.tournamentGateway!.broadcastTournamentUpdate(info.tournamentId, {
+              type: 'round_countdown',
+              countdownMs: 30000,
+            });
+
+            setTimeout(async () => {
+            try {
+              this.tournamentGateway!.clearNextRoundTimer(info.tournamentId);
+              const checkT = await this.tournamentService!.getTournament(info.tournamentId);
+              if (checkT.status === 'ongoing') {
+                const nextResult = await this.tournamentService!.nextRound(info.tournamentId);
+                const updatedT = await this.tournamentService!.getTournament(info.tournamentId);
+                const updatedRounds = await this.tournamentService!.getTournamentRounds(info.tournamentId);
+                this.tournamentGateway!.broadcastTournamentUpdate(info.tournamentId, {
+                  type: 'next_round',
+                  tournament: updatedT,
+                  rounds: updatedRounds,
+                });
+                
+                if (nextResult.round) {
+                  for (const g of nextResult.round.games) {
+                    if (g.blackId !== 'BYE') {
+                      this.tournamentGateway!.notifyPlayer(g.whiteId, 'tournament_game_ready', {
+                        type: 'tournament_game_ready',
+                        gameId: g.gameId,
+                        tournamentId: info.tournamentId,
+                        round: g.round,
+                        yourColor: 'white',
+                        opponentId: g.blackId,
+                        opponentUsername: g.blackUsername,
+                      });
+                      this.tournamentGateway!.notifyPlayer(g.blackId, 'tournament_game_ready', {
+                        type: 'tournament_game_ready',
+                        gameId: g.gameId,
+                        tournamentId: info.tournamentId,
+                        round: g.round,
+                        yourColor: 'black',
+                        opponentId: g.whiteId,
+                        opponentUsername: g.whiteUsername,
+                      });
+                    }
+                  }
+                }
+              }
+            } catch (e: any) {
+              this.logger.error(`Auto next round error: ${e.message}`);
+            }
+          }, 30000);
+          }
+        }
       }
     } catch (err) {
       this.logger.error('Failed to record tournament game result', err);
@@ -790,8 +920,11 @@ export class GameGateway
     return 'blitz';
   }
 
-  private async triggerLeaderboardUpdate(game: GameState): Promise<void> {
-    if (!this.leaderboardGateway) return;
+  private async triggerLeaderboardUpdate(game: GameState): Promise<{
+    whiteChange: number; blackChange: number;
+    whiteNewElo: number; blackNewElo: number;
+  } | null> {
+    if (!this.leaderboardGateway) return null;
     try {
       const category = this.getCategory(game.timeControl);
       const isDraw = game.winner === 'draw';
@@ -811,7 +944,7 @@ export class GameGateway
       const winnerElo = isDraw ? whiteElo : (game.winner === 'white' ? whiteElo : blackElo);
       const loserElo = isDraw ? blackElo : (game.winner === 'white' ? blackElo : whiteElo);
 
-      await this.leaderboardGateway.triggerEloUpdate({
+      const result = await this.leaderboardGateway.triggerEloUpdate({
         winnerId,
         winnerUsername: winnerName,
         loserId,
@@ -821,8 +954,18 @@ export class GameGateway
         isDraw,
         category,
       });
+
+      // Map winner/loser changes back to white/black
+      const isWhiteWinner = game.winner === 'white';
+      return {
+        whiteChange: isDraw ? result.winnerChange : (isWhiteWinner ? result.winnerChange : result.loserChange),
+        blackChange: isDraw ? result.loserChange : (isWhiteWinner ? result.loserChange : result.winnerChange),
+        whiteNewElo: isDraw ? result.winnerNewElo : (isWhiteWinner ? result.winnerNewElo : result.loserNewElo),
+        blackNewElo: isDraw ? result.loserNewElo : (isWhiteWinner ? result.loserNewElo : result.winnerNewElo),
+      };
     } catch (err) {
       this.logger.error('Failed to update leaderboard after game', err);
+      return null;
     }
   }
 }
