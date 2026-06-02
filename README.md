@@ -332,6 +332,8 @@ Hệ thống cờ vua trực tuyến hỗ trợ **16 use case chính**, phục v
 - Các vòng sau: Ghép cặp dựa trên **điểm số** (win=1, draw=0.5, loss=0) và **tiebreaks** (Buchholz, Sonneborn-Berger)
 - Tối đa 7 vòng
 
+**Tài liệu chi tiết**: Xem [`docs/swiss-pairing-algorithm.md`](docs/swiss-pairing-algorithm.md)
+
 **Trang/API**: `/tournaments` → `POST /tournament` → `TournamentController`
 
 ---
