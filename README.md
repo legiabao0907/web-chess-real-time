@@ -67,24 +67,15 @@ Hệ thống cờ vua trực tuyến hỗ trợ **16 use case chính**, phục v
 
 ### UC-01: Đăng Ký Tài Khoản
 
-| Thuộc tính | Chi tiết |
-|------------|----------|
-| **Actor** | Khách (Guest) |
-| **Mục tiêu** | Tạo tài khoản mới để truy cập hệ thống |
-| **Pre-condition** | Chưa có tài khoản trong hệ thống |
-| **Post-condition** | Tài khoản được tạo, có thể đăng nhập |
-
-**Luồng Chính (Main Flow)**:
-1. Khách truy cập trang `/register`
-2. Khách nhập **email**, **username**, **password**
-3. Hệ thống kiểm tra email/username chưa tồn tại
-4. Hệ thống mã hóa password bằng **bcrypt**
-5. Hệ thống tạo user mới trong PostgreSQL (`users` table) với ELO mặc định 1200 cho cả 3 loại (Blitz/Rapid/Bullet)
-6. Hệ thống trả về thông báo thành công, chuyển hướng sang `/login`
-
-**Luồng Thay Thế (Alternative Flow)**:
-- **A1**: Email hoặc username đã tồn tại → Thông báo lỗi "Email/Username already exists" (409 Conflict)
-- **A2**: Password không đủ mạnh → Yêu cầu nhập lại
+| Mục | Nội dung |
+|-----|----------|
+| **Tên Use Case** | Đăng Ký Tài Khoản |
+| **Tác nhân (Actor)** | Khách (Guest) |
+| **Mô tả** | Tạo tài khoản mới với email, username, password để truy cập hệ thống |
+| **Tiền điều kiện** | Người dùng chưa có tài khoản trong hệ thống |
+| **Luồng sự kiện chính (Basic Flow)** | 1. Khách truy cập trang `/register`<br/>2. Khách nhập **email**, **username**, **password**<br/>3. Hệ thống kiểm tra email/username chưa tồn tại<br/>4. Hệ thống mã hóa password bằng **bcrypt**<br/>5. Hệ thống tạo user mới trong PostgreSQL (`users` table) với ELO mặc định 1200 cho cả 3 loại (Blitz/Rapid/Bullet)<br/>6. Hệ thống trả về thông báo thành công, chuyển hướng sang `/login` |
+| **Luồng ngoại lệ (Alternative Flow)** | • **A1**: Email hoặc username đã tồn tại → Thông báo lỗi "Email/Username already exists" (409 Conflict)<br/>• **A2**: Password không đủ mạnh → Yêu cầu nhập lại |
+| **Hậu điều kiện** | Tài khoản được tạo thành công, người dùng có thể đăng nhập |
 
 **Trang/API**: `POST /auth/register` → `AuthController.register()`
 
@@ -92,25 +83,15 @@ Hệ thống cờ vua trực tuyến hỗ trợ **16 use case chính**, phục v
 
 ### UC-02: Đăng Nhập
 
-| Thuộc tính | Chi tiết |
-|------------|----------|
-| **Actor** | Khách (Guest) |
-| **Mục tiêu** | Xác thực và nhận token truy cập |
-| **Pre-condition** | Đã có tài khoản (UC-01) |
-| **Post-condition** | Người dùng được xác thực, có JWT token |
-
-**Luồng Chính (Main Flow)**:
-1. Khách truy cập trang `/login`
-2. Khách nhập **email** và **password**
-3. Hệ thống tra cứu user trong PostgreSQL
-4. Hệ thống so sánh password với hash (bcrypt)
-5. Nếu hợp lệ, hệ thống tạo **Access Token** (15 phút) và **Refresh Token** (7 ngày)
-6. Token được lưu vào Redis và trả về client
-7. Client lưu token vào `localStorage`, chuyển hướng sang `/home`
-
-**Luồng Thay Thế**:
-- **A1**: Sai email/password → 401 Unauthorized
-- **A2**: Token hết hạn → Client tự động dùng Refresh Token để lấy Access Token mới
+| Mục | Nội dung |
+|-----|----------|
+| **Tên Use Case** | Đăng Nhập |
+| **Tác nhân (Actor)** | Khách (Guest) |
+| **Mô tả** | Xác thực người dùng bằng email/password, nhận JWT token để truy cập hệ thống |
+| **Tiền điều kiện** | Người dùng đã có tài khoản (đã thực hiện UC-01) |
+| **Luồng sự kiện chính (Basic Flow)** | 1. Khách truy cập trang `/login`<br/>2. Khách nhập **email** và **password**<br/>3. Hệ thống tra cứu user trong PostgreSQL<br/>4. Hệ thống so sánh password với hash (bcrypt)<br/>5. Nếu hợp lệ, hệ thống tạo **Access Token** (15 phút) và **Refresh Token** (7 ngày)<br/>6. Token được lưu vào Redis và trả về client<br/>7. Client lưu token vào `localStorage`, chuyển hướng sang `/home` |
+| **Luồng ngoại lệ (Alternative Flow)** | • **A1**: Sai email/password → 401 Unauthorized<br/>• **A2**: Token hết hạn → Client tự động dùng Refresh Token để lấy Access Token mới |
+| **Hậu điều kiện** | Người dùng được xác thực, có JWT token hợp lệ để gọi API và kết nối WebSocket |
 
 **Trang/API**: `POST /auth/login` → `AuthController.login()`
 
@@ -123,27 +104,15 @@ Hệ thống cờ vua trực tuyến hỗ trợ **16 use case chính**, phục v
 
 ### UC-03: Tìm Trận (Matchmaking)
 
-| Thuộc tính | Chi tiết |
-|------------|----------|
-| **Actor** | Người chơi (Player) |
-| **Mục tiêu** | Ghép cặp với người chơi khác có cùng time control |
-| **Pre-condition** | Đã đăng nhập, không đang trong trận nào |
-| **Post-condition** | Được ghép cặp hoặc xếp hàng đợi |
-
-**Luồng Chính (Main Flow)**:
-1. Người chơi vào trang `/play`, chọn **Time Control** (Bullet 1|0, Blitz 3|0, 5|0, Rapid 10|0, 15|10, v.v.)
-2. Client emit `join_queue` qua WebSocket (`/chess` namespace)
-3. Server gọi **Redis Lua Script** (`JOIN_QUEUE_LUA`) — thao tác atomic:
-   - Quét hàng đợi tìm đối thủ cùng time control
-   - Nếu tìm thấy: Lấy đối thủ ra, trả về `"MATCHED:{opponent}"`
-   - Nếu không: Thêm người chơi vào hàng đợi, trả về `"QUEUED"`
-4. **Nếu MATCHED**: Server tạo game state trong Redis, cả 2 join Socket.IO room, emit `game_started`
-5. **Nếu QUEUED**: Server emit `queue_joined`, client hiển thị "Đang tìm trận..."
-
-**Luồng Thay Thế**:
-- **A1**: Người chơi đã trong hàng đợi → Cập nhật socketId, trả về `"ALREADY_QUEUED"`
-- **A2**: Người chơi hủy tìm trận → `LEAVE_QUEUE_LUA` xóa khỏi hàng đợi
-- **A3**: Người chơi đang trong trận khác → Từ chối, emit lỗi
+| Mục | Nội dung |
+|-----|----------|
+| **Tên Use Case** | Tìm Trận (Matchmaking) |
+| **Tác nhân (Actor)** | Người chơi (Player) |
+| **Mô tả** | Ghép cặp tự động với người chơi khác có cùng time control qua Redis Lua script atomic |
+| **Tiền điều kiện** | Người dùng đã đăng nhập, không đang trong trận đấu nào khác |
+| **Luồng sự kiện chính (Basic Flow)** | 1. Người chơi vào trang `/play`, chọn **Time Control** (Bullet 1|0, Blitz 3|0, 5|0, Rapid 10|0, 15|10, v.v.)<br/>2. Client emit `join_queue` qua WebSocket (`/chess` namespace)<br/>3. Server gọi **Redis Lua Script** (`JOIN_QUEUE_LUA`) — thao tác atomic:<br/>&nbsp;&nbsp;&nbsp;&nbsp;• Quét hàng đợi tìm đối thủ cùng time control<br/>&nbsp;&nbsp;&nbsp;&nbsp;• Nếu tìm thấy: Lấy đối thủ ra, trả về `"MATCHED:{opponent}"`<br/>&nbsp;&nbsp;&nbsp;&nbsp;• Nếu không: Thêm người chơi vào hàng đợi, trả về `"QUEUED"`<br/>4. **Nếu MATCHED**: Server tạo game state trong Redis, cả 2 join Socket.IO room, emit `game_started`<br/>5. **Nếu QUEUED**: Server emit `queue_joined`, client hiển thị "Đang tìm trận..." |
+| **Luồng ngoại lệ (Alternative Flow)** | • **A1**: Người chơi đã trong hàng đợi → Cập nhật socketId, trả về `"ALREADY_QUEUED"`<br/>• **A2**: Người chơi hủy tìm trận → `LEAVE_QUEUE_LUA` xóa khỏi hàng đợi<br/>• **A3**: Người chơi đang trong trận khác → Từ chối, emit lỗi |
+| **Hậu điều kiện** | Người chơi được ghép cặp thành công và trận đấu bắt đầu, hoặc được xếp vào hàng đợi chờ đối thủ |
 
 **Đảm bảo nhất quán**:
 - Lua script chạy **atomic** trong Redis — không race condition
@@ -156,30 +125,15 @@ Hệ thống cờ vua trực tuyến hỗ trợ **16 use case chính**, phục v
 
 ### UC-04: Chơi Với Bot/AI
 
-| Thuộc tính | Chi tiết |
-|------------|----------|
-| **Actor** | Người chơi (Player) |
-| **Mục tiêu** | Đấu với máy (AI) ở mức độ khó tùy chọn |
-| **Pre-condition** | Đã đăng nhập |
-| **Post-condition** | Trận đấu với bot được tạo, bot tự động đi cờ |
-
-**Luồng Chính (Main Flow)**:
-1. Người chơi vào trang `/play-bot`
-2. Chọn **màu quân** (Trắng/Đen) và **mức độ khó** (Easy/Medium/Hard)
-3. Client emit `start_bot_game` qua WebSocket
-4. Server tạo game state với `blackId = BOT_USER_ID`
-5. Server emit `game_started`, client hiển thị bàn cờ
-6. Nếu bot đi trước (người chơi chọn Đen), server gọi `AiService.getBestMove()` để sinh nước đi đầu tiên
-
-**Cách Bot Sinh Nước Đi**:
-- Gọi `AiService.getBestMove(fen, difficulty, botColor)`
-- Sử dụng **Minimax + Alpha-Beta Pruning** với độ sâu tương ứng (Easy=1, Medium=3, Hard=5)
-- Các tối ưu: MVV-LVA Move Ordering, Piece-Square Tables, Quiescence Search, Mobility Bonus
-- Ở chế độ Easy: 35% xác suất đi nước **ngẫu nhiên**
-- Khi persist vào DB: `blackId` được **nullify** (không tạo user record cho bot)
-
-**Luồng Thay Thế**:
-- **A1**: Người chơi chọn Đen → Bot (Trắng) đi trước, gọi `AiService` ngay sau khi game bắt đầu
+| Mục | Nội dung |
+|-----|----------|
+| **Tên Use Case** | Chơi Với Bot/AI |
+| **Tác nhân (Actor)** | Người chơi (Player) |
+| **Mô tả** | Đấu với máy (AI) ở 3 mức độ khó: Easy, Medium, Hard. Bot sử dụng thuật toán Minimax + Alpha-Beta Pruning |
+| **Tiền điều kiện** | Người dùng đã đăng nhập |
+| **Luồng sự kiện chính (Basic Flow)** | 1. Người chơi vào trang `/play-bot`<br/>2. Chọn **màu quân** (Trắng/Đen) và **mức độ khó** (Easy/Medium/Hard)<br/>3. Client emit `start_bot_game` qua WebSocket<br/>4. Server tạo game state với `blackId = BOT_USER_ID`<br/>5. Server emit `game_started`, client hiển thị bàn cờ<br/>6. Nếu bot đi trước (người chơi chọn Đen), server gọi `AiService.getBestMove()` để sinh nước đi đầu tiên<br/><br/>**Cách Bot Sinh Nước Đi**:<br/>• Gọi `AiService.getBestMove(fen, difficulty, botColor)`<br/>• Sử dụng **Minimax + Alpha-Beta Pruning** với độ sâu tương ứng (Easy=1, Medium=3, Hard=5)<br/>• Các tối ưu: MVV-LVA Move Ordering, Piece-Square Tables, Quiescence Search, Mobility Bonus<br/>• Ở chế độ Easy: 35% xác suất đi nước **ngẫu nhiên**<br/>• Khi persist vào DB: `blackId` được **nullify** (không tạo user record cho bot) |
+| **Luồng ngoại lệ (Alternative Flow)** | • **A1**: Người chơi chọn Đen → Bot (Trắng) đi trước, gọi `AiService` ngay sau khi game bắt đầu |
+| **Hậu điều kiện** | Trận đấu với bot được tạo, bot tự động sinh nước đi khi đến lượt |
 
 **Trang/API**: `/play-bot` → WebSocket `start_bot_game` → `GameGateway` + `AiService.getBestMove()`
 
@@ -189,33 +143,15 @@ Hệ thống cờ vua trực tuyến hỗ trợ **16 use case chính**, phục v
 
 ### UC-05: Đi Cờ (Make Move)
 
-| Thuộc tính | Chi tiết |
-|------------|----------|
-| **Actor** | Người chơi (Player) |
-| **Mục tiêu** | Thực hiện một nước đi hợp lệ trong trận đấu |
-| **Pre-condition** | Đang trong trận đấu active, đến lượt mình |
-| **Post-condition** | Nước đi được thực hiện, đồng hồ cập nhật, broadcast tới đối thủ |
-
-**Luồng Chính (Main Flow)**:
-1. Người chơi kéo/thả quân cờ trên bàn cờ (react-chessboard)
-2. Client validate sơ bộ bằng chess.js (UX only — highlight legal moves)
-3. Client emit `make_move` với `{from, to, promotion?}` qua WebSocket
-4. **Server validate** (bắt buộc — chống cheat):
-   - Có phải lượt của người chơi không?
-   - Game có đang active không?
-   - Nước đi có hợp lệ theo luật cờ vua không? (chess.js)
-5. Nếu hợp lệ:
-   - Tính và trừ thời gian (server-side clock)
-   - Cập nhật game state trong Redis (FEN, PGN, moves[])
-   - Broadcast `move_made` tới Socket.IO room (gameId)
-   - Broadcast `game_update` tới spectators (WatchGateway)
-   - Kiểm tra điều kiện kết thúc (chiếu hết, hết giờ, hòa)
-6. Nếu không hợp lệ: emit `error` về client
-
-**Luồng Thay Thế**:
-- **A1**: Đi nước không hợp lệ → Server từ chối, emit lỗi
-- **A2**: Không phải lượt → Server từ chối
-- **A3**: Game đã kết thúc → Server từ chối
+| Mục | Nội dung |
+|-----|----------|
+| **Tên Use Case** | Đi Cờ (Make Move) |
+| **Tác nhân (Actor)** | Người chơi (Player) |
+| **Mô tả** | Thực hiện một nước đi hợp lệ trong trận đấu. Mọi nước đi đều được validate server-side bằng chess.js để chống gian lận |
+| **Tiền điều kiện** | Người chơi đang trong trận đấu active, đúng lượt của mình |
+| **Luồng sự kiện chính (Basic Flow)** | 1. Người chơi kéo/thả quân cờ trên bàn cờ (react-chessboard)<br/>2. Client validate sơ bộ bằng chess.js (UX only — highlight legal moves)<br/>3. Client emit `make_move` với `{from, to, promotion?}` qua WebSocket<br/>4. **Server validate** (bắt buộc — chống cheat):<br/>&nbsp;&nbsp;&nbsp;&nbsp;• Có phải lượt của người chơi không?<br/>&nbsp;&nbsp;&nbsp;&nbsp;• Game có đang active không?<br/>&nbsp;&nbsp;&nbsp;&nbsp;• Nước đi có hợp lệ theo luật cờ vua không? (chess.js)<br/>5. Nếu hợp lệ:<br/>&nbsp;&nbsp;&nbsp;&nbsp;• Tính và trừ thời gian (server-side clock)<br/>&nbsp;&nbsp;&nbsp;&nbsp;• Cập nhật game state trong Redis (FEN, PGN, moves[])<br/>&nbsp;&nbsp;&nbsp;&nbsp;• Broadcast `move_made` tới Socket.IO room (gameId)<br/>&nbsp;&nbsp;&nbsp;&nbsp;• Broadcast `game_update` tới spectators (WatchGateway)<br/>&nbsp;&nbsp;&nbsp;&nbsp;• Kiểm tra điều kiện kết thúc (chiếu hết, hết giờ, hòa)<br/>6. Nếu không hợp lệ: emit `error` về client |
+| **Luồng ngoại lệ (Alternative Flow)** | • **A1**: Đi nước không hợp lệ → Server từ chối, emit lỗi<br/>• **A2**: Không phải lượt → Server từ chối<br/>• **A3**: Game đã kết thúc → Server từ chối |
+| **Hậu điều kiện** | Nước đi được thực hiện thành công, đồng hồ được cập nhật, trạng thái được broadcast tới đối thủ và khán giả |
 
 **Nguyên tắc quan trọng**:
 - **Server là nguồn chân lý duy nhất** — mọi validation phải thực hiện ở server
@@ -228,31 +164,15 @@ Hệ thống cờ vua trực tuyến hỗ trợ **16 use case chính**, phục v
 
 ### UC-06: Kết Thúc Trận Đấu
 
-| Thuộc tính | Chi tiết |
-|------------|----------|
-| **Actor** | Người chơi (Player), Hệ thống |
-| **Mục tiêu** | Kết thúc trận đấu, lưu lịch sử, cập nhật ELO |
-| **Pre-condition** | Đang trong trận đấu active |
-| **Post-condition** | Trận đấu được lưu vào PostgreSQL, ELO cập nhật, Redis cleaned up |
-
-**Luồng Chính (Main Flow)** — Các trường hợp kết thúc:
-
-| Trường hợp | Trigger | Kết quả |
-|------------|---------|---------|
-| **Chiếu hết** (Checkmate) | Nước đi dẫn đến checkmate | Bên chiếu hết thắng |
-| **Hết giờ** (Timeout) | Đồng hồ về 0 | Bên còn thời gian thắng |
-| **Đầu hàng** (Resign) | Người chơi emit `resign` | Đối thủ thắng |
-| **Hòa** (Draw) | 2 bên đồng ý / Stalemate / 50 nước / Không đủ quân | Hòa |
-
-**Quy trình xử lý**:
-1. Xác định kết quả (winner, loser, hoặc draw)
-2. Gọi `LeaderboardGateway.triggerEloUpdate()` — tính ELO chuẩn FIDE
-3. Emit `game_over` tới cả 2 người chơi + spectators, kèm `whiteEloChange`, `blackEloChange`, `whiteNewElo`, `blackNewElo`
-4. Lưu game vào PostgreSQL (`games` table): PGN, FEN, moves[], status, winnerId
-5. Nullify bot ID nếu là bot game
-6. Xóa game state khỏi Redis (sau TTL)
-7. Clear `currentGameId` của cả 2 người chơi
-8. Nếu là tournament game → gọi `recordTournamentGameResult()` để cập nhật điểm
+| Mục | Nội dung |
+|-----|----------|
+| **Tên Use Case** | Kết Thúc Trận Đấu |
+| **Tác nhân (Actor)** | Người chơi (Player), Hệ thống |
+| **Mô tả** | Kết thúc trận đấu khi có chiếu hết, hết giờ, đầu hàng hoặc hòa; lưu lịch sử vào PostgreSQL và cập nhật ELO |
+| **Tiền điều kiện** | Trận đấu đang ở trạng thái active |
+| **Luồng sự kiện chính (Basic Flow)** | **Các trường hợp kết thúc:**<br/><br/>| Trường hợp | Trigger | Kết quả |<br/>|------------|---------|---------|<br/>| **Chiếu hết** (Checkmate) | Nước đi dẫn đến checkmate | Bên chiếu hết thắng |<br/>| **Hết giờ** (Timeout) | Đồng hồ về 0 | Bên còn thời gian thắng |<br/>| **Đầu hàng** (Resign) | Người chơi emit `resign` | Đối thủ thắng |<br/>| **Hòa** (Draw) | 2 bên đồng ý / Stalemate / 50 nước / Không đủ quân | Hòa |<br/><br/>**Quy trình xử lý:**<br/>1. Xác định kết quả (winner, loser, hoặc draw)<br/>2. Gọi `LeaderboardGateway.triggerEloUpdate()` — tính ELO chuẩn FIDE<br/>3. Emit `game_over` tới cả 2 người chơi + spectators, kèm `whiteEloChange`, `blackEloChange`, `whiteNewElo`, `blackNewElo`<br/>4. Lưu game vào PostgreSQL (`games` table): PGN, FEN, moves[], status, winnerId<br/>5. Nullify bot ID nếu là bot game<br/>6. Xóa game state khỏi Redis (sau TTL)<br/>7. Clear `currentGameId` của cả 2 người chơi<br/>8. Nếu là tournament game → gọi `recordTournamentGameResult()` để cập nhật điểm |
+| **Luồng ngoại lệ (Alternative Flow)** | • **A1**: Game đã được lưu trước đó → Bỏ qua, không lưu trùng lặp |
+| **Hậu điều kiện** | Trận đấu được lưu vào PostgreSQL, ELO được cập nhật trong Redis + DB, trạng thái game bị xóa khỏi Redis |
 
 **Trang/API**: WebSocket `/chess` → `GameGateway.handleGameOver()` + `GameService.saveGameToDb()`
 
@@ -260,24 +180,15 @@ Hệ thống cờ vua trực tuyến hỗ trợ **16 use case chính**, phục v
 
 ### UC-07: Xem Trận Đấu Trực Tiếp (Spectator)
 
-| Thuộc tính | Chi tiết |
-|------------|----------|
-| **Actor** | Người chơi (Player) |
-| **Mục tiêu** | Xem trực tiếp các trận đấu đang diễn ra |
-| **Pre-condition** | Đã đăng nhập |
-| **Post-condition** | Nhận real-time updates của trận đấu đã chọn |
-
-**Luồng Chính (Main Flow)**:
-1. Người chơi vào trang `/watch` — hiển thị danh sách các trận đang active
-2. Chọn một trận để xem
-3. Client emit `watch_game` với `{gameId}` qua WebSocket (`/watch` namespace)
-4. Server kiểm tra game có tồn tại và đang active không
-5. Nếu có: Spectator join Socket.IO room (gameId), emit `game_state` (trạng thái hiện tại)
-6. Trong suốt trận: mỗi khi có nước đi mới, `GameGateway` gọi `WatchGateway.broadcastGameUpdate()` — emit `game_update` tới tất cả spectators
-7. Khi game kết thúc: emit `game_over` tới spectators
-
-**Luồng Thay Thế**:
-- **A1**: Game không tồn tại hoặc đã kết thúc → Emit lỗi "Game not found"
+| Mục | Nội dung |
+|-----|----------|
+| **Tên Use Case** | Xem Trận Đấu Trực Tiếp (Spectator) |
+| **Tác nhân (Actor)** | Người chơi (Player) |
+| **Mô tả** | Xem trực tiếp (spectator mode) các trận đấu đang diễn ra, nhận real-time updates qua WebSocket |
+| **Tiền điều kiện** | Người dùng đã đăng nhập |
+| **Luồng sự kiện chính (Basic Flow)** | 1. Người chơi vào trang `/watch` — hiển thị danh sách các trận đang active<br/>2. Chọn một trận để xem<br/>3. Client emit `watch_game` với `{gameId}` qua WebSocket (`/watch` namespace)<br/>4. Server kiểm tra game có tồn tại và đang active không<br/>5. Nếu có: Spectator join Socket.IO room (gameId), emit `game_state` (trạng thái hiện tại)<br/>6. Trong suốt trận: mỗi khi có nước đi mới, `GameGateway` gọi `WatchGateway.broadcastGameUpdate()` — emit `game_update` tới tất cả spectators<br/>7. Khi game kết thúc: emit `game_over` tới spectators |
+| **Luồng ngoại lệ (Alternative Flow)** | • **A1**: Game không tồn tại hoặc đã kết thúc → Emit lỗi "Game not found" |
+| **Hậu điều kiện** | Người xem nhận được real-time updates của trận đấu đã chọn cho đến khi trận đấu kết thúc |
 
 **Trang/API**: `/watch` → WebSocket `/watch` → `WatchGateway`
 
@@ -285,18 +196,15 @@ Hệ thống cờ vua trực tuyến hỗ trợ **16 use case chính**, phục v
 
 ### UC-08: Xem Lịch Sử Trận Đấu
 
-| Thuộc tính | Chi tiết |
-|------------|----------|
-| **Actor** | Người chơi (Player) |
-| **Mục tiêu** | Tra cứu các trận đấu đã chơi |
-| **Pre-condition** | Đã đăng nhập |
-| **Post-condition** | Hiển thị danh sách trận đấu, xem chi tiết PGN, nước đi |
-
-**Luồng Chính (Main Flow)**:
-1. Người chơi vào trang `/archives`
-2. Hệ thống query PostgreSQL lấy danh sách game của user (làm trắng hoặc đen), sắp xếp theo thời gian giảm dần
-3. Hiển thị: đối thủ, kết quả (thắng/thua/hòa), time control, ngày giờ
-4. Click vào một trận để xem chi tiết: PGN, danh sách nước đi, bàn cờ finale, thời gian còn lại
+| Mục | Nội dung |
+|-----|----------|
+| **Tên Use Case** | Xem Lịch Sử Trận Đấu |
+| **Tác nhân (Actor)** | Người chơi (Player) |
+| **Mô tả** | Tra cứu các trận đấu đã chơi, xem chi tiết PGN, danh sách nước đi và bàn cờ finale |
+| **Tiền điều kiện** | Người dùng đã đăng nhập |
+| **Luồng sự kiện chính (Basic Flow)** | 1. Người chơi vào trang `/archives`<br/>2. Hệ thống query PostgreSQL lấy danh sách game của user (làm trắng hoặc đen), sắp xếp theo thời gian giảm dần<br/>3. Hiển thị: đối thủ, kết quả (thắng/thua/hòa), time control, ngày giờ<br/>4. Click vào một trận để xem chi tiết: PGN, danh sách nước đi, bàn cờ finale, thời gian còn lại |
+| **Luồng ngoại lệ (Alternative Flow)** | • **A1**: Người chơi chưa có trận đấu nào → Hiển thị "Chưa có trận đấu nào" |
+| **Hậu điều kiện** | Danh sách lịch sử trận đấu được hiển thị, người chơi có thể xem chi tiết từng trận |
 
 **Trang/API**: `/archives` → `GET /game/history` → `GameController.getHistory()`
 
@@ -304,33 +212,15 @@ Hệ thống cờ vua trực tuyến hỗ trợ **16 use case chính**, phục v
 
 ### UC-09: Tạo & Quản Lý Giải Đấu
 
-| Thuộc tính | Chi tiết |
-|------------|----------|
-| **Actor** | Người chơi (Player), Admin |
-| **Mục tiêu** | Tạo và quản lý giải đấu cờ vua theo thể thức Swiss |
-| **Pre-condition** | Đã đăng nhập |
-| **Post-condition** | Giải đấu được tạo, người chơi có thể tham gia |
-
-**Luồng Chính (Main Flow)**:
-1. Người chơi vào trang `/tournaments`, click "Tạo Giải Đấu"
-2. Nhập thông tin: **Tên giải**, **Thể thức** (Swiss), **Time Control**, **Số vòng tối đa** (mặc định 7)
-3. Hệ thống tạo tournament trong PostgreSQL với `status = 'upcoming'`
-4. Creator có thể bắt đầu giải đấu → `status → 'ongoing'`
-5. Hệ thống tự động chạy các vòng đấu với Swiss Pairing
-6. Creator/Admin có thể:
-   - **Kết thúc giải sớm**: `PATCH /tournament/:id/finish`
-   - **Xóa giải đấu**: `DELETE /tournament/:id` (chỉ khi status != 'ongoing')
-   - **Chuyển vòng thủ công**: `PATCH /tournament/:id/next-round`
-
-**Luồng Thay Thế**:
-- **A1**: Không phải creator/admin → 403 Forbidden
-- **A2**: Giải đang ongoing → Không thể xóa, phải finish trước
-- **A3**: Dưới 2 người tham gia → Không thể bắt đầu
-
-**Swiss Pairing Algorithm** (`TournamentSwissService`):
-- Vòng 1: Ghép cặp ngẫu nhiên hoặc theo rating
-- Các vòng sau: Ghép cặp dựa trên **điểm số** (win=1, draw=0.5, loss=0) và **tiebreaks** (Buchholz, Sonneborn-Berger)
-- Tối đa 7 vòng
+| Mục | Nội dung |
+|-----|----------|
+| **Tên Use Case** | Tạo & Quản Lý Giải Đấu |
+| **Tác nhân (Actor)** | Người chơi (Player), Admin |
+| **Mô tả** | Tạo và quản lý giải đấu cờ vua theo thể thức Swiss. Hỗ trợ tạo, bắt đầu, kết thúc, chuyển vòng và xóa giải đấu |
+| **Tiền điều kiện** | Người dùng đã đăng nhập |
+| **Luồng sự kiện chính (Basic Flow)** | 1. Người chơi vào trang `/tournaments`, click "Tạo Giải Đấu"<br/>2. Nhập thông tin: **Tên giải**, **Thể thức** (Swiss), **Time Control**, **Số vòng tối đa** (mặc định 7)<br/>3. Hệ thống tạo tournament trong PostgreSQL với `status = 'upcoming'`<br/>4. Creator có thể bắt đầu giải đấu → `status → 'ongoing'`<br/>5. Hệ thống tự động chạy các vòng đấu với Swiss Pairing<br/>6. Creator/Admin có thể:<br/>&nbsp;&nbsp;&nbsp;&nbsp;• **Kết thúc giải sớm**: `PATCH /tournament/:id/finish`<br/>&nbsp;&nbsp;&nbsp;&nbsp;• **Xóa giải đấu**: `DELETE /tournament/:id` (chỉ khi status != 'ongoing')<br/>&nbsp;&nbsp;&nbsp;&nbsp;• **Chuyển vòng thủ công**: `PATCH /tournament/:id/next-round`<br/><br/>**Swiss Pairing Algorithm** (`TournamentSwissService`):<br/>• Vòng 1: Ghép cặp ngẫu nhiên hoặc theo rating<br/>• Các vòng sau: Ghép cặp dựa trên **điểm số** (win=1, draw=0.5, loss=0) và **tiebreaks** (Buchholz, Sonneborn-Berger)<br/>• Tối đa 7 vòng |
+| **Luồng ngoại lệ (Alternative Flow)** | • **A1**: Không phải creator/admin → 403 Forbidden<br/>• **A2**: Giải đang ongoing → Không thể xóa, phải finish trước<br/>• **A3**: Dưới 2 người tham gia → Không thể bắt đầu |
+| **Hậu điều kiện** | Giải đấu được tạo thành công, người chơi có thể tham gia và thi đấu |
 
 **Tài liệu chi tiết**: Xem [`docs/swiss-pairing-algorithm.md`](docs/swiss-pairing-algorithm.md)
 
@@ -340,27 +230,15 @@ Hệ thống cờ vua trực tuyến hỗ trợ **16 use case chính**, phục v
 
 ### UC-10: Tham Gia & Rời Giải Đấu
 
-| Thuộc tính | Chi tiết |
-|------------|----------|
-| **Actor** | Người chơi (Player) |
-| **Mục tiêu** | Đăng ký hoặc hủy đăng ký tham gia giải đấu |
-| **Pre-condition** | Đã đăng nhập, giải đấu tồn tại |
-| **Post-condition** | Tham gia hoặc rời khỏi danh sách thi đấu |
-
-**Luồng Chính (Main Flow)**:
-1. Người chơi vào trang chi tiết giải đấu (`/tournaments/[id]`)
-2. Click **"Tham Gia"** → `POST /tournament/:id/join`
-3. Hệ thống thêm user vào `tournament_participants`
-4. Cập nhật real-time: `TournamentGateway` broadcast `tournament_update` tới tất cả participants
-5. Khi giải đấu đã bắt đầu, nút "Tham Gia" bị ẩn (không thể join giữa chừng)
-
-**Rời Giải Đấu**:
-- Chỉ có thể rời khi `status = 'upcoming'` (chưa bắt đầu)
-- `POST /tournament/:id/leave` → Xóa khỏi `tournament_participants`
-
-**Luồng Thay Thế**:
-- **A1**: Giải đã ongoing → Không thể tham gia hoặc rời
-- **A2**: Đã tham gia rồi → Không thể join lại
+| Mục | Nội dung |
+|-----|----------|
+| **Tên Use Case** | Tham Gia & Rời Giải Đấu |
+| **Tác nhân (Actor)** | Người chơi (Player) |
+| **Mô tả** | Đăng ký tham gia hoặc hủy đăng ký khỏi một giải đấu. Chỉ có thể tham gia/rời khi giải chưa bắt đầu |
+| **Tiền điều kiện** | Người dùng đã đăng nhập, giải đấu tồn tại và có trạng thái `upcoming` |
+| **Luồng sự kiện chính (Basic Flow)** | 1. Người chơi vào trang chi tiết giải đấu (`/tournaments/[id]`)<br/>2. Click **"Tham Gia"** → `POST /tournament/:id/join`<br/>3. Hệ thống thêm user vào `tournament_participants`<br/>4. Cập nhật real-time: `TournamentGateway` broadcast `tournament_update` tới tất cả participants<br/>5. Khi giải đấu đã bắt đầu, nút "Tham Gia" bị ẩn (không thể join giữa chừng)<br/><br/>**Rời Giải Đấu**:<br/>• Chỉ có thể rời khi `status = 'upcoming'` (chưa bắt đầu)<br/>• `POST /tournament/:id/leave` → Xóa khỏi `tournament_participants` |
+| **Luồng ngoại lệ (Alternative Flow)** | • **A1**: Giải đã ongoing → Không thể tham gia hoặc rời<br/>• **A2**: Đã tham gia rồi → Không thể join lại |
+| **Hậu điều kiện** | Người chơi được thêm vào (hoặc xóa khỏi) danh sách thi đấu của giải |
 
 **Trang/API**: `/tournaments/[id]` → `POST /tournament/:id/join`, `POST /tournament/:id/leave`
 
@@ -368,34 +246,15 @@ Hệ thống cờ vua trực tuyến hỗ trợ **16 use case chính**, phục v
 
 ### UC-11: Thi Đấu Trong Giải Đấu
 
-| Thuộc tính | Chi tiết |
-|------------|----------|
-| **Actor** | Người chơi (Player) |
-| **Mục tiêu** | Thi đấu các trận trong giải, tích lũy điểm, xếp hạng |
-| **Pre-condition** | Đã tham gia giải đấu (UC-10), giải đang ongoing |
-| **Post-condition** | Kết quả trận đấu được ghi nhận vào bảng xếp hạng giải |
-
-**Luồng Chính (Main Flow)**:
-1. Khi giải đấu bắt đầu, hệ thống sinh **pairings vòng 1** bằng Swiss algorithm
-2. Tạo game state trong Redis cho mỗi cặp đấu với `tournamentId`
-3. Người chơi nhận event `tournament_update` → thấy pairing của mình
-4. Người chơi vào trang `/tournament-game/[gameId]` để thi đấu
-5. Luồng đi cờ giống UC-05, nhưng game có gắn `tournamentId`
-6. Khi game kết thúc → `recordTournamentGameResult()`:
-   - Cập nhật kết quả vào Redis round data
-   - Tính điểm (win=1, draw=0.5, loss=0)
-   - Kiểm tra nếu **tất cả game trong vòng đã finished**
-7. **Chuyển vòng tự động**:
-   - Nếu tất cả game finished + round < 7: Bắt đầu **countdown 30 giây**
-   - Sau 30 giây: `nextRound()` → Swiss pairing vòng mới → broadcast `next_round`
-   - Nếu round >= 7: `finishTournament()` → broadcast `tournament_finished`
-8. Kết thúc giải: Xác định người thắng dựa trên điểm số và tiebreaks
-
-**Real-time Updates**:
-- `round_countdown`: Đếm ngược 30 giây trước vòng mới
-- `next_round`: Pairings vòng mới
-- `game_result`: Kết quả từng trận
-- `tournament_finished`: Giải đấu kết thúc
+| Mục | Nội dung |
+|-----|----------|
+| **Tên Use Case** | Thi Đấu Trong Giải Đấu |
+| **Tác nhân (Actor)** | Người chơi (Player) |
+| **Mô tả** | Thi đấu các trận trong giải đấu theo thể thức Swiss, tích lũy điểm số và xếp hạng. Hệ thống tự động chuyển vòng sau mỗi 30 giây khi tất cả các trận trong vòng kết thúc |
+| **Tiền điều kiện** | Người dùng đã tham gia giải đấu (UC-10), giải đang ở trạng thái `ongoing` |
+| **Luồng sự kiện chính (Basic Flow)** | 1. Khi giải đấu bắt đầu, hệ thống sinh **pairings vòng 1** bằng Swiss algorithm<br/>2. Tạo game state trong Redis cho mỗi cặp đấu với `tournamentId`<br/>3. Người chơi nhận event `tournament_update` → thấy pairing của mình<br/>4. Người chơi vào trang `/tournament-game/[gameId]` để thi đấu<br/>5. Luồng đi cờ giống UC-05, nhưng game có gắn `tournamentId`<br/>6. Khi game kết thúc → `recordTournamentGameResult()`:<br/>&nbsp;&nbsp;&nbsp;&nbsp;• Cập nhật kết quả vào Redis round data<br/>&nbsp;&nbsp;&nbsp;&nbsp;• Tính điểm (win=1, draw=0.5, loss=0)<br/>&nbsp;&nbsp;&nbsp;&nbsp;• Kiểm tra nếu **tất cả game trong vòng đã finished**<br/>7. **Chuyển vòng tự động**:<br/>&nbsp;&nbsp;&nbsp;&nbsp;• Nếu tất cả game finished + round < 7: Bắt đầu **countdown 30 giây**<br/>&nbsp;&nbsp;&nbsp;&nbsp;• Sau 30 giây: `nextRound()` → Swiss pairing vòng mới → broadcast `next_round`<br/>&nbsp;&nbsp;&nbsp;&nbsp;• Nếu round >= 7: `finishTournament()` → broadcast `tournament_finished`<br/>8. Kết thúc giải: Xác định người thắng dựa trên điểm số và tiebreaks<br/><br/>**Real-time Updates**:<br/>• `round_countdown`: Đếm ngược 30 giây trước vòng mới<br/>• `next_round`: Pairings vòng mới<br/>• `game_result`: Kết quả từng trận<br/>• `tournament_finished`: Giải đấu kết thúc |
+| **Luồng ngoại lệ (Alternative Flow)** | • **A1**: Người chơi disconnect giữa trận → Hệ thống tự động xử lý timeout<br/>• **A2**: Chỉ còn 1 người trong giải → Không thể tiếp tục, giải kết thúc sớm |
+| **Hậu điều kiện** | Kết quả trận đấu được ghi nhận vào bảng xếp hạng giải, điểm số và tiebreaks được cập nhật |
 
 **Trang/API**: `/tournament-game/[id]` → WebSocket `/tournament` → `TournamentGateway`
 
@@ -403,33 +262,15 @@ Hệ thống cờ vua trực tuyến hỗ trợ **16 use case chính**, phục v
 
 ### UC-12: Chat Trực Tiếp 1-1 (Direct Message)
 
-| Thuộc tính | Chi tiết |
-|------------|----------|
-| **Actor** | Người chơi (Player) |
-| **Mục tiêu** | Nhắn tin riêng tư thời gian thực với người chơi khác |
-| **Pre-condition** | Đã đăng nhập |
-| **Post-condition** | Tin nhắn được gửi, lưu vào DB, hiển thị real-time |
-
-**Luồng Chính (Main Flow)**:
-1. Người chơi mở **ChatDrawer** (thanh chat bên phải)
-2. Chọn một người bạn từ danh sách để bắt đầu chat
-3. Client emit `join_dm` qua WebSocket (`/chat` namespace)
-4. Server tạo (hoặc lấy) **private chat room** trong DB, trả về lịch sử tin nhắn (từ Redis cache hoặc DB)
-5. Người chơi gõ tin nhắn, client emit `send_dm` hoặc `send_direct_message`
-6. Server lưu tin nhắn vào PostgreSQL + Redis cache (50 tin nhắn gần nhất), broadcast tới người nhận
-7. Người nhận nhận event `dm_message` hoặc `receive_direct_message` → hiển thị trong ChatDrawer hoặc badge Unread
-
-**Hai Luồng Gửi Tin Nhắn**:
-| Luồng | Event | Cơ chế | Dùng khi |
-|-------|-------|--------|----------|
-| Room-based | `send_dm` | Socket.IO room broadcast | Cả 2 đã mở chat |
-| Direct-based | `send_direct_message` | Redis `chess:online_users` → tìm socketId → emit trực tiếp | Người nhận chưa mở chat |
-
-**Tính năng bổ trợ**:
-- **Typing indicator**: Emit `typing` → `user_typing`
-- **Online status**: Redis Hash `chess:online_users` → `user_status`
-- **Multi-tab support**: Tin nhắn đồng bộ trên nhiều tab
-- **Message cache**: Redis List `chat:room:{roomId}:messages` (50 tin gần nhất, TTL 1h)
+| Mục | Nội dung |
+|-----|----------|
+| **Tên Use Case** | Chat Trực Tiếp 1-1 (Direct Message) |
+| **Tác nhân (Actor)** | Người chơi (Player) |
+| **Mô tả** | Nhắn tin riêng tư thời gian thực với người chơi khác qua WebSocket. Hỗ trợ 2 luồng gửi: Room-based (Socket.IO rooms) và Direct-based (Redis Hash mapping) |
+| **Tiền điều kiện** | Người dùng đã đăng nhập |
+| **Luồng sự kiện chính (Basic Flow)** | 1. Người chơi mở **ChatDrawer** (thanh chat bên phải)<br/>2. Chọn một người bạn từ danh sách để bắt đầu chat<br/>3. Client emit `join_dm` qua WebSocket (`/chat` namespace)<br/>4. Server tạo (hoặc lấy) **private chat room** trong DB, trả về lịch sử tin nhắn (từ Redis cache hoặc DB)<br/>5. Người chơi gõ tin nhắn, client emit `send_dm` hoặc `send_direct_message`<br/>6. Server lưu tin nhắn vào PostgreSQL + Redis cache (50 tin nhắn gần nhất), broadcast tới người nhận<br/>7. Người nhận nhận event `dm_message` hoặc `receive_direct_message` → hiển thị trong ChatDrawer hoặc badge Unread<br/><br/>**Hai Luồng Gửi Tin Nhắn**:<br/>| Luồng | Event | Cơ chế | Dùng khi |<br/>|-------|-------|--------|----------|<br/>| Room-based | `send_dm` | Socket.IO room broadcast | Cả 2 đã mở chat |<br/>| Direct-based | `send_direct_message` | Redis `chess:online_users` → tìm socketId → emit trực tiếp | Người nhận chưa mở chat |<br/><br/>**Tính năng bổ trợ**:<br/>• **Typing indicator**: Emit `typing` → `user_typing`<br/>• **Online status**: Redis Hash `chess:online_users` → `user_status`<br/>• **Multi-tab support**: Tin nhắn đồng bộ trên nhiều tab<br/>• **Message cache**: Redis List `chat:room:{roomId}:messages` (50 tin gần nhất, TTL 1h) |
+| **Luồng ngoại lệ (Alternative Flow)** | • **A1**: Mất kết nối WebSocket → Hiển thị cảnh báo, tự động reconnect<br/>• **A2**: Gửi tin nhắn thất bại → Hiển thị error toast, cho phép thử lại |
+| **Hậu điều kiện** | Tin nhắn được gửi thành công, lưu vào DB, hiển thị real-time cho người nhận |
 
 **Trang/API**: ChatDrawer UI → WebSocket `/chat` → `ChatGateway` + `ChatService`
 
@@ -437,28 +278,15 @@ Hệ thống cờ vua trực tuyến hỗ trợ **16 use case chính**, phục v
 
 ### UC-13: Xem Bảng Xếp Hạng (Leaderboard)
 
-| Thuộc tính | Chi tiết |
-|------------|----------|
-| **Actor** | Người chơi (Player), Khách (Guest) |
-| **Mục tiêu** | Xem bảng xếp hạng người chơi theo ELO |
-| **Pre-condition** | Không yêu cầu đăng nhập (public) |
-| **Post-condition** | Hiển thị top người chơi theo từng loại time control |
-
-**Luồng Chính (Main Flow)**:
-1. Người chơi vào trang `/ranks`
-2. Chọn **category**: Blitz / Bullet / Rapid
-3. Hệ thống query Redis Sorted Set `chess:leaderboard:{category}` bằng `ZREVRANGE` (ELO giảm dần)
-4. Với mỗi userId, lấy thêm thông tin từ Redis Hash `chess:player:{userId}:{category}` (wins, losses, draws, gamesPlayed, trend)
-5. Hiển thị bảng: Rank, Username, ELO, Win/Loss/Draw, Games Played, Trend (↑↓→)
-
-**Real-time Updates**:
-- `LeaderboardGateway` broadcast `leaderboard_update` mỗi khi ELO thay đổi
-- Client listen để cập nhật bảng xếp hạng động
-
-**Data Source**:
-- **Redis Sorted Set**: Xếp hạng theo ELO (O(log N) update, O(log N + K) query top K)
-- **Redis Hash**: Thông tin chi tiết người chơi (TTL 7 ngày)
-- **PostgreSQL fallback**: Khi Redis data hết hạn, query từ DB
+| Mục | Nội dung |
+|-----|----------|
+| **Tên Use Case** | Xem Bảng Xếp Hạng (Leaderboard) |
+| **Tác nhân (Actor)** | Người chơi (Player), Khách (Guest) |
+| **Mô tả** | Xem bảng xếp hạng người chơi theo ELO cho từng loại time control (Blitz/Bullet/Rapid). Dữ liệu từ Redis Sorted Set, có real-time updates |
+| **Tiền điều kiện** | Không yêu cầu đăng nhập (public) |
+| **Luồng sự kiện chính (Basic Flow)** | 1. Người chơi vào trang `/ranks`<br/>2. Chọn **category**: Blitz / Bullet / Rapid<br/>3. Hệ thống query Redis Sorted Set `chess:leaderboard:{category}` bằng `ZREVRANGE` (ELO giảm dần)<br/>4. Với mỗi userId, lấy thêm thông tin từ Redis Hash `chess:player:{userId}:{category}` (wins, losses, draws, gamesPlayed, trend)<br/>5. Hiển thị bảng: Rank, Username, ELO, Win/Loss/Draw, Games Played, Trend (↑↓→)<br/><br/>**Real-time Updates**:<br/>• `LeaderboardGateway` broadcast `leaderboard_update` mỗi khi ELO thay đổi<br/>• Client listen để cập nhật bảng xếp hạng động<br/><br/>**Data Source**:<br/>• **Redis Sorted Set**: Xếp hạng theo ELO (O(log N) update, O(log N + K) query top K)<br/>• **Redis Hash**: Thông tin chi tiết người chơi (TTL 7 ngày)<br/>• **PostgreSQL fallback**: Khi Redis data hết hạn, query từ DB |
+| **Luồng ngoại lệ (Alternative Flow)** | • **A1**: Redis data hết hạn → Fallback query từ PostgreSQL |
+| **Hậu điều kiện** | Bảng xếp hạng được hiển thị với dữ liệu ELO mới nhất |
 
 **Trang/API**: `/ranks` → WebSocket `/leaderboard` → `LeaderboardGateway`
 
@@ -466,26 +294,15 @@ Hệ thống cờ vua trực tuyến hỗ trợ **16 use case chính**, phục v
 
 ### UC-14: Quản Lý Hồ Sơ Cá Nhân
 
-| Thuộc tính | Chi tiết |
-|------------|----------|
-| **Actor** | Người chơi (Player) |
-| **Mục tiêu** | Xem và chỉnh sửa thông tin cá nhân |
-| **Pre-condition** | Đã đăng nhập |
-| **Post-condition** | Thông tin hồ sơ được cập nhật |
-
-**Luồng Chính (Main Flow)**:
-1. Người chơi click vào avatar → vào trang Profile
-2. Hệ thống gọi `GET /user/me` → Trả về thông tin từ PostgreSQL:
-   - username, email, ELO (Blitz/Rapid/Bullet), role, createdAt
-   - Profile metadata (avatar, bio, preferences) từ `profileInfo` JSONB
-3. Người chơi có thể chỉnh sửa:
-   - Avatar, Bio, Preferences
-4. `PATCH /user/profile` → Cập nhật `profileInfo.metadata` JSONB
-
-**Hiển thị stats** (từ Redis Leaderboard):
-- Tổng số trận, Thắng/Thua/Hòa
-- ELO hiện tại, ELO change gần nhất
-- Rank trong bảng xếp hạng
+| Mục | Nội dung |
+|-----|----------|
+| **Tên Use Case** | Quản Lý Hồ Sơ Cá Nhân |
+| **Tác nhân (Actor)** | Người chơi (Player) |
+| **Mô tả** | Xem và chỉnh sửa thông tin cá nhân: avatar, bio, preferences. Hiển thị stats (tổng số trận, thắng/thua/hòa, ELO, rank) |
+| **Tiền điều kiện** | Người dùng đã đăng nhập |
+| **Luồng sự kiện chính (Basic Flow)** | 1. Người chơi click vào avatar → vào trang Profile<br/>2. Hệ thống gọi `GET /user/me` → Trả về thông tin từ PostgreSQL:<br/>&nbsp;&nbsp;&nbsp;&nbsp;• username, email, ELO (Blitz/Rapid/Bullet), role, createdAt<br/>&nbsp;&nbsp;&nbsp;&nbsp;• Profile metadata (avatar, bio, preferences) từ `profileInfo` JSONB<br/>3. Người chơi có thể chỉnh sửa: Avatar, Bio, Preferences<br/>4. `PATCH /user/profile` → Cập nhật `profileInfo.metadata` JSONB<br/><br/>**Hiển thị stats** (từ Redis Leaderboard):<br/>• Tổng số trận, Thắng/Thua/Hòa<br/>• ELO hiện tại, ELO change gần nhất<br/>• Rank trong bảng xếp hạng |
+| **Luồng ngoại lệ (Alternative Flow)** | • **A1**: User không tồn tại → 404 Not Found |
+| **Hậu điều kiện** | Thông tin hồ sơ được hiển thị hoặc cập nhật thành công |
 
 **Trang/API**: Trang Profile → `GET /user/me`, `PATCH /user/profile`
 
@@ -493,25 +310,15 @@ Hệ thống cờ vua trực tuyến hỗ trợ **16 use case chính**, phục v
 
 ### UC-15: Hệ Thống Bạn Bè (Friend)
 
-| Thuộc tính | Chi tiết |
-|------------|----------|
-| **Actor** | Người chơi (Player) |
-| **Mục tiêu** | Kết bạn, quản lý danh sách bạn bè |
-| **Pre-condition** | Đã đăng nhập |
-| **Post-condition** | Quan hệ bạn bè được thiết lập |
-
-**Luồng Chính (Main Flow)**:
-1. Người chơi vào trang `/friends`
-2. **Gửi lời mời**: Tìm kiếm username → Gửi lời mời kết bạn → `POST /user/friends/request`
-3. Hệ thống tạo record trong `friends` table với `status = 'pending'`
-4. Người nhận thấy thông báo lời mời
-5. **Chấp nhận/Từ chối**: `PUT /user/friends/respond` → `status → 'accepted'` hoặc xóa record
-6. Danh sách bạn bè hiển thị trong ChatDrawer để bắt đầu chat
-
-**Trạng thái**:
-- `pending`: Đã gửi lời mời, chưa phản hồi
-- `accepted`: Đã là bạn bè
-- `blocked`: Đã chặn
+| Mục | Nội dung |
+|-----|----------|
+| **Tên Use Case** | Hệ Thống Bạn Bè (Friend) |
+| **Tác nhân (Actor)** | Người chơi (Player) |
+| **Mô tả** | Gửi/nhận lời mời kết bạn, chấp nhận/từ chối lời mời, quản lý danh sách bạn bè. Bạn bè có thể chat 1-1 với nhau |
+| **Tiền điều kiện** | Người dùng đã đăng nhập |
+| **Luồng sự kiện chính (Basic Flow)** | 1. Người chơi vào trang `/friends`<br/>2. **Gửi lời mời**: Tìm kiếm username → Gửi lời mời kết bạn → `POST /user/friends/request`<br/>3. Hệ thống tạo record trong `friends` table với `status = 'pending'`<br/>4. Người nhận thấy thông báo lời mời<br/>5. **Chấp nhận/Từ chối**: `PUT /user/friends/respond` → `status → 'accepted'` hoặc xóa record<br/>6. Danh sách bạn bè hiển thị trong ChatDrawer để bắt đầu chat<br/><br/>**Trạng thái**:<br/>• `pending`: Đã gửi lời mời, chưa phản hồi<br/>• `accepted`: Đã là bạn bè<br/>• `blocked`: Đã chặn |
+| **Luồng ngoại lệ (Alternative Flow)** | • **A1**: Đã gửi lời mời trước đó → Không thể gửi lại<br/>• **A2**: Đã là bạn bè → Không thể gửi lời mời<br/>• **A3**: Người dùng không tồn tại → 404 Not Found |
+| **Hậu điều kiện** | Quan hệ bạn bè được thiết lập, người chơi có thể chat 1-1 với bạn |
 
 **Trang/API**: `/friends` → `POST /user/friends/request`, `PUT /user/friends/respond`, `GET /user/friends`
 
@@ -519,38 +326,15 @@ Hệ thống cờ vua trực tuyến hỗ trợ **16 use case chính**, phục v
 
 ### UC-16: Tính & Hiển Thị ELO Sau Trận
 
-| Thuộc tính | Chi tiết |
-|------------|----------|
-| **Actor** | Hệ thống (tự động) |
-| **Mục tiêu** | Tính ELO chuẩn FIDE sau mỗi trận đấu, hiển thị cho người chơi |
-| **Pre-condition** | Trận đấu vừa kết thúc (UC-06) |
-| **Post-condition** | ELO được cập nhật trong Redis + PostgreSQL, hiển thị +/- ELO |
-
-**Công Thức ELO (FIDE)**:
-
-$$E_A = \frac{1}{1 + 10^{(R_B - R_A) / 400}}$$
-
-$$R'_A = R_A + K \times (S_A - E_A)$$
-
-Trong đó:
-- $R_A, R_B$: ELO hiện tại của 2 người chơi
-- $E_A$: Điểm kỳ vọng của người chơi A (xác suất thắng dự kiến)
-- $S_A$: Kết quả thực tế (1 = thắng, 0.5 = hòa, 0 = thua)
-- $K = 32$: Hệ số K (tốc độ thay đổi ELO)
-- $R'_A$: ELO mới của người chơi A
-
-**Quy trình**:
-1. Game kết thúc → `GameGateway` gọi `LeaderboardGateway.triggerEloUpdate()`
-2. Tính `winnerChange`, `loserChange`, `winnerNewElo`, `loserNewElo`
-3. Cập nhật Redis Sorted Set (ELO ranking) + Redis Hash (player stats)
-4. Persist vào PostgreSQL `users` table (`blitzRating` / `bulletRating` / `rapidRating`)
-5. Emit `game_over` kèm `whiteEloChange`, `blackEloChange`, `whiteNewElo`, `blackNewElo`
-6. Frontend hiển thị Game Over Modal:
-   - 🏆 **Thắng**: +X ELO (glow xanh)
-   - 💔 **Thua**: -Y ELO (glow đỏ)
-   - 🤝 **Hòa**: ±Z ELO (glow vàng)
-   - Hiển thị: `ELO cũ → ELO mới`
-7. Cập nhật `localStorage authUser` để UI (bottom panel, profile) hiển thị ELO mới ngay
+| Mục | Nội dung |
+|-----|----------|
+| **Tên Use Case** | Tính & Hiển Thị ELO Sau Trận |
+| **Tác nhân (Actor)** | Hệ thống (tự động) |
+| **Mô tả** | Tự động tính ELO chuẩn FIDE sau mỗi trận đấu, cập nhật vào Redis + PostgreSQL, và hiển thị +/- ELO cho người chơi |
+| **Tiền điều kiện** | Trận đấu vừa kết thúc (UC-06) |
+| **Luồng sự kiện chính (Basic Flow)** | 1. Game kết thúc → `GameGateway` gọi `LeaderboardGateway.triggerEloUpdate()`<br/>2. Tính `winnerChange`, `loserChange`, `winnerNewElo`, `loserNewElo` theo công thức FIDE (K=32)<br/>3. Cập nhật Redis Sorted Set (ELO ranking) + Redis Hash (player stats)<br/>4. Persist vào PostgreSQL `users` table (`blitzRating` / `bulletRating` / `rapidRating`)<br/>5. Emit `game_over` kèm `whiteEloChange`, `blackEloChange`, `whiteNewElo`, `blackNewElo`<br/>6. Frontend hiển thị Game Over Modal:<br/>&nbsp;&nbsp;&nbsp;&nbsp;• 🏆 **Thắng**: +X ELO (glow xanh)<br/>&nbsp;&nbsp;&nbsp;&nbsp;• 💔 **Thua**: -Y ELO (glow đỏ)<br/>&nbsp;&nbsp;&nbsp;&nbsp;• 🤝 **Hòa**: ±Z ELO (glow vàng)<br/>&nbsp;&nbsp;&nbsp;&nbsp;• Hiển thị: `ELO cũ → ELO mới`<br/>7. Cập nhật `localStorage authUser` để UI (bottom panel, profile) hiển thị ELO mới ngay<br/><br/>**Công Thức ELO (FIDE)**:<br/><br/>$$E_A = \\frac{1}{1 + 10^{(R_B - R_A) / 400}}$$<br/><br/>$$R'_A = R_A + K \\times (S_A - E_A)$$<br/><br/>Trong đó:<br/>• $R_A, R_B$: ELO hiện tại của 2 người chơi<br/>• $E_A$: Điểm kỳ vọng của người chơi A (xác suất thắng dự kiến)<br/>• $S_A$: Kết quả thực tế (1 = thắng, 0.5 = hòa, 0 = thua)<br/>• $K = 32$: Hệ số K (tốc độ thay đổi ELO)<br/>• $R'_A$: ELO mới của người chơi A |
+| **Luồng ngoại lệ (Alternative Flow)** | • **A1**: Lỗi khi persist vào PostgreSQL → Retry, log lỗi, ELO vẫn được lưu trong Redis |
+| **Hậu điều kiện** | ELO được cập nhật trong Redis + PostgreSQL, người chơi thấy +/- ELO trên giao diện |
 
 **Trang/API**: WebSocket `/chess` → `GameGateway.handleGameOver()` + `LeaderboardGateway.triggerEloUpdate()`
 
