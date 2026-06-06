@@ -155,61 +155,71 @@ sequenceDiagram
 
 ## 2. Ghép Trận & Chơi Cờ (Matchmaking & Game Play)
 
-### UC-G01: Ghép Trận Tự Động (Matchmaking)
+### UC-G01: Ghép Trận Tự Động (ELO-Based Matchmaking)
 
 ```mermaid
 sequenceDiagram
- actor P1 as Người Chơi 1
- actor P2 as Người Chơi 2
+ actor P1 as Người Chơi 1 (ELO 1420)
+ actor P2 as Người Chơi 2 (ELO 1400)
  participant FE1 as FE (Player 1)
  participant FE2 as FE (Player 2)
  participant BE as Backend (NestJS)
- participant Redis as Redis
+ participant Redis as Redis (ZSET Queue)
 
- Note over P1, P2: Cả 2 đã đăng nhập
+ Note over P1, P2: Cả 2 đã đăng nhập, chọn Blitz 5+0
 
  %% Player 1 vào hàng đợi
- P1->>FE1: 1. Vào trang /play
- P1->>FE1: 2. Chọn time control (Blitz)
- P1->>FE1: 3. Click "Tìm trận"
+ P1->>FE1: 1. Vào trang /play, chọn Blitz
+ P1->>FE1: 2. Click "Find Match"
+ FE1->>BE: 3. Socket emit 'find_game' {timeControl: 'blitz_5', rating: 1420}
 
- FE1->>FE1: 4. Kết nối Socket.IO namespace /chess
- FE1->>BE: 5. Socket emit 'join_queue' {timeControl: 'blitz'}
+ BE->>Redis: 4. EVALSHA MATCHMAKE_LUA<br/>queue=blitz_5, uid=P1, maxDiff=30
+ Note over Redis: ZSET atomic:<br/>1. ZSCAN kiểm tra trùng lặp<br/>2. ZRANGEBYSCORE [1390, 1450]<br/>3. Queue rỗng → ZADD score=1420
+ Redis-->>BE: 5. Kết quả: "QUEUED:30"
 
- BE->>Redis: 6. EVAL JOIN_QUEUE_LUA (userId1, 'blitz')
- Note over Redis: Lua Script chạy atomic:<br/>1. Quét queue tìm đối thủ cùng timeControl<br/>2. Nếu không có → thêm vào queue
- Redis-->>BE: 7. Kết quả: "QUEUED"
+ BE-->>FE1: 6. Emit 'searching' {timeControl, eloRange: 30, startedAt}
+ FE1->>FE1: 7. Hiển thị UI Searching:<br/>Radar animation, Range: ±30 ELO<br/>Elapsed: 00:00, Queue: 1 player
 
- BE-->>FE1: 8. Socket emit 'queue_joined'
- FE1-->>P1: 9. Hiển thị "Đang tìm đối thủ..." (spinner)
+ %% Server periodic re-match (mỗi 5s)
+ loop Mỗi 5 giây — re-match interval
+  BE->>Redis: 8. ZCARD queue → queueSize
+  BE->>Redis: 9. ZRANGE queue → danh sách entries
+  BE->>BE: 10. Tính expandedRange cho từng entry<br/>= min(30 + 30*floor(elapsed/5s), 200)
+  BE-->>FE1: 11. Emit 'search_progress' {elapsed, eloRange, queueSize, estimatedWait}
+  FE1->>FE1: 12. Cập nhật UI: Range bar mở rộng, elapsed tăng
+ end
 
  %% Player 2 vào hàng đợi
- P2->>FE2: 10. Vào trang /play
- P2->>FE2: 11. Chọn time control (Blitz)
- P2->>FE2: 12. Click "Tìm trận"
+ P2->>FE2: 13. Vào trang /play, chọn Blitz
+ P2->>FE2: 14. Click "Find Match"
+ FE2->>BE: 15. Socket emit 'find_game' {timeControl: 'blitz_5', rating: 1400}
 
- FE2->>FE2: 13. Kết nối Socket.IO namespace /chess
- FE2->>BE: 14. Socket emit 'join_queue' {timeControl: 'blitz'}
-
- BE->>Redis: 15. EVAL JOIN_QUEUE_LUA (userId2, 'blitz')
- Note over Redis: Lua Script:<br/>1. Quét queue → tìm thấy userId1<br/>2. Lấy userId1 ra khỏi queue<br/>3. Return đối thủ
- Redis-->>BE: 16. Kết quả: {opponent: userId1}
+ BE->>Redis: 16. EVALSHA MATCHMAKE_LUA<br/>queue=blitz_5, uid=P2, maxDiff=30
+ Note over Redis: ZSET atomic:<br/>1. ZRANGEBYSCORE [1370, 1430]<br/>2. Tìm thấy P1 (1420) — chênh 20 ELO<br/>3. ZREM P1 khỏi queue<br/>4. Return MATCHED:{P1}
+ Redis-->>BE: 17. Kết quả: "MATCHED:{entry P1}"
 
  %% Server tạo game
- BE->>BE: 17. Tạo gameId (UUID)
- BE->>Redis: 18. Tạo game state trong Redis:<br/>HSET game:{gameId}<br/> whiteId, blackId, fen, pgn, moves,<br/> timeControl, whiteTime, blackTime,<br/> status='active'
- BE->>Redis: 19. SET user1:currentGameId = gameId
- BE->>Redis: 20. SET user2:currentGameId = gameId
+ BE->>BE: 18. Tạo gameId (UUID)
+ BE->>Redis: 19. Tạo game state trong Redis:<br/>HSET game:{gameId}<br/> whiteId, blackId, fen, pgn, moves,<br/> timeControl, whiteTime, blackTime,<br/> status='active'
+ BE->>Redis: 20. SET user:P1:game = gameId
+ BE->>Redis: 21. SET user:P2:game = gameId
 
  %% Thông báo cho cả 2
- BE-->>FE1: 21. Socket emit 'game_started' {gameId, color: 'white', opponent: userId2}
- BE-->>FE2: 22. Socket emit 'game_started' {gameId, color: 'black', opponent: userId1}
+ BE-->>FE1: 22. Emit 'game_start' {gameId, color, opponent, ...}
+ BE-->>FE2: 23. Emit 'game_start' {gameId, color, opponent, ...}
 
- FE1-->>P1: 23. Hiển thị bàn cờ (quân trắng), đồng hồ bắt đầu
- FE2-->>P2: 24. Hiển thị bàn cờ (quân đen), đồng hồ bắt đầu
+ FE1-->>P1: 24. Hiển thị bàn cờ (quân trắng), đồng hồ bắt đầu
+ FE2-->>P2: 25. Hiển thị bàn cờ (quân đen), đồng hồ bắt đầu
 
  Note over FE1, FE2: Cả 2 tự động join Socket.IO room: game:{gameId}
 ```
+
+**Điểm khác biệt so với thuật toán cũ:**
+- Queue dùng **ZSET** (sorted set) thay vì List, index theo rating
+- **ZRANGEBYSCORE** tìm đối thủ trong phạm vi ELO thay vì LPOP (FIFO)
+- **Server-driven re-match**: Mỗi 5 giây, server tự động thử ghép lại với phạm vi ELO mở rộng
+- Client nhận `search_progress` để cập nhật UI (elapsed time, ELO range bar, queue stats)
+- Lua script chọn đối thủ có **rating gần nhất** trong phạm vi, không phải người vào trước
 
 ### UC-G02: Đi Cờ (Make Move)
 

@@ -7,7 +7,7 @@ const Chessboard: any = dynamic(
   { ssr: false }
 );
 import { Chess } from "chess.js";
-import { Flag, Handshake, MessageSquare, Search, X, Send, ChevronLeft, ChevronRight, SkipBack, SkipForward, BarChart3 } from "lucide-react";
+import { Flag, Handshake, MessageSquare, Search, X, Send, ChevronLeft, ChevronRight, SkipBack, SkipForward, BarChart3, Swords } from "lucide-react";
 import "./play.css";
 import { useChessSocket } from "@/hooks/useChessSocket";
 import { getUser, AuthUser } from "@/lib/auth";
@@ -38,6 +38,9 @@ function PlayPageContent() {
   // Opponent profile popup
   const [showOpponentPopup, setShowOpponentPopup] = useState(false);
 
+  // Matchmaking
+  const [selectedTc, setSelectedTc] = useState<string | null>(null);
+
   // Clocks
   const [whiteClock, setWhiteClock] = useState(0);
   const [blackClock, setBlackClock] = useState(0);
@@ -49,7 +52,7 @@ function PlayPageContent() {
     setUser(getUser());
   }, []);
 
-  const { connected, gameStatus, game, chatMessages, drawOffered, errorMessage, searchingTimeControl, analysis, actions } =
+  const { connected, gameStatus, game, chatMessages, drawOffered, errorMessage, searchingTimeControl, analysis, searchProgress, actions } =
     useChessSocket({ userId: user?.id ?? "", username: user?.username ?? "Guest" });
 
   // Auto-join game from URL if connected
@@ -106,6 +109,24 @@ function PlayPageContent() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages.length]);
+
+  // Client-side elapsed time counter during searching
+  const [clientElapsed, setClientElapsed] = useState(0);
+  useEffect(() => {
+    if (gameStatus !== "searching") {
+      setClientElapsed(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setClientElapsed((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [gameStatus]);
+
+  // Merge server progress with client elapsed
+  const displayProgress = searchProgress
+    ? { ...searchProgress, elapsed: clientElapsed || searchProgress.elapsed }
+    : null;
 
   // ── Build FEN list from moveHistory for arrow-key navigation ───────────────
   // Replay each SAN move from the beginning to capture the board state after each move.
@@ -246,35 +267,118 @@ function PlayPageContent() {
 
       {/* LEFT COLUMN */}
       <div className="board-area relative flex-1">
-        {/* Matchmaking Overlay */}
+        {/* Matchmaking Overlay — Professional Design */} 
         {(gameStatus === "idle" || gameStatus === "searching") && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm rounded-lg border border-white/10 m-4">
             {gameStatus === "idle" ? (
-              <div className="text-center p-8 bg-[#1f2937] rounded-xl shadow-2xl border border-white/5">
-                <h2 className="text-3xl font-bold text-white mb-8">Play Real-Time Chess</h2>
-                <div className="flex flex-col gap-4">
+              <div className="matchmaking-panel">
+                {/* Floating Knight Icon */}
+                <div className="matchmaking-logo">
+                  <span className="knight-icon">♞</span>
+                </div>
+                <h2 className="matchmaking-title">Find Your Opponent</h2>
+                <p className="matchmaking-subtitle">Select a time control to start matchmaking</p>
+
+                {/* Time Control Cards */}
+                <div className="tc-cards">
                   {[
-                    { label: "Bullet 1+0", tc: "bullet_1", color: "#ef4444" },
-                    { label: "Blitz 5+0", tc: "blitz_5", color: "#a855f7" },
-                    { label: "Rapid 10+0", tc: "rapid_10", color: "#2563eb" },
-                  ].map((b) => (
-                    <button key={b.tc} onClick={() => actions.findGame(b.tc)} disabled={!connected}
-                      className="flex items-center justify-center gap-3 px-8 py-3 text-white rounded-lg font-bold transition text-base w-full disabled:opacity-50"
-                      style={{ background: b.color }}>
-                      <Search size={18} /> {b.label}
+                    { label: "Bullet", detail: "1 min", inc: "+0 sec", tc: "bullet_1", color: "#ef4444", icon: "⚡", eloKey: "eloBullet" as const },
+                    { label: "Blitz", detail: "5 min", inc: "+0 sec", tc: "blitz_5", color: "#a855f7", icon: "🔥", eloKey: "eloBlitz" as const },
+                    { label: "Rapid", detail: "10 min", inc: "+0 sec", tc: "rapid_10", color: "#2563eb", icon: "🧠", eloKey: "eloRapid" as const },
+                  ].map((tc) => (
+                    <button
+                      key={tc.tc}
+                      onClick={() => setSelectedTc(tc.tc)}
+                      disabled={!connected}
+                      className={`tc-card ${selectedTc === tc.tc ? "selected" : ""}`}
+                      style={{ "--tc-color": tc.color } as React.CSSProperties}
+                    >
+                      <div className="tc-card-header">
+                        <span className="tc-icon">{tc.icon}</span>
+                        <span className="tc-label">{tc.label}</span>
+                      </div>
+                      <div className="tc-detail">{tc.detail} &middot; {tc.inc}</div>
+                      <div className="tc-elo">{(user as any)?.[tc.eloKey] ?? 1200} ELO</div>
                     </button>
                   ))}
                 </div>
-                {!connected && <p className="mt-6 text-yellow-400 text-sm">Server offline. Trying to reconnect...</p>}
+
+                {/* Find Match Button */}
+                <button
+                  onClick={() => selectedTc && actions.findGame(selectedTc, (user as any)?.[selectedTc === "bullet_1" ? "eloBullet" : selectedTc === "blitz_5" ? "eloBlitz" : "eloRapid"] ?? 1200)}
+                  disabled={!connected || !selectedTc}
+                  className="find-match-btn"
+                >
+                  <Swords size={20} />
+                  Find Match
+                </button>
+
+                {!connected && (
+                  <p className="text-yellow-400 text-sm mt-4 text-center">
+                    Server offline. Trying to reconnect...
+                  </p>
+                )}
               </div>
             ) : (
-              <div className="text-center p-8 bg-[#1f2937] rounded-xl shadow-2xl border border-white/5">
-                <div className="animate-spin rounded-full border-b-4 border-[#a855f7] w-16 h-16 mb-6 mx-auto" />
-                <h2 className="text-2xl font-bold text-white mb-2">Searching for Opponent...</h2>
-                <p className="text-white/60 mb-8">{searchingTimeControl?.replace("_", " ")}</p>
-                <button onClick={() => searchingTimeControl && actions.cancelSearch(searchingTimeControl)}
-                  className="flex flex-row items-center justify-center gap-2 px-8 py-3 bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded-lg transition font-medium w-full">
-                  <X size={18} /> Cancel Search
+              <div className="matchmaking-panel searching">
+                {/* Radar Pulse Animation */}
+                <div className="radar-container">
+                  <div className="radar-ring ring-1" />
+                  <div className="radar-ring ring-2" />
+                  <div className="radar-ring ring-3" />
+                  <div className="radar-center">♞</div>
+                </div>
+
+                <h2 className="matchmaking-title">Searching for Opponent</h2>
+                <p className="matchmaking-subtitle">
+                  {searchingTimeControl?.replace("_", " ")}
+                </p>
+
+                {/* ELO Range Bar */}
+                <div className="elo-range-section">
+                  <div className="elo-range-labels">
+                    <span>{Math.max(0, (displayProgress?.eloRange ? (user as any)?.eloBlitz ?? 1200 - displayProgress.eloRange : 1170))}</span>
+                    <span className="elo-my-rating">{(user as any)?.eloBlitz ?? 1200} (you)</span>
+                    <span>{Math.max(0, (displayProgress?.eloRange ? (user as any)?.eloBlitz ?? 1200 + displayProgress.eloRange : 1230))}</span>
+                  </div>
+                  <div className="elo-range-bar">
+                    <div
+                      className="elo-range-fill"
+                      style={{
+                        left: `${Math.max(0, 50 - (displayProgress?.eloRange ?? 30) / 200 * 50)}%`,
+                        width: `${Math.min(100, (displayProgress?.eloRange ?? 30) / 200 * 100)}%`,
+                      }}
+                    />
+                    <div className="elo-range-dot" style={{ left: "50%" }} />
+                  </div>
+                  <div className="elo-range-label-row">
+                    <span>Range: &plusmn;{displayProgress?.eloRange ?? 30} ELO</span>
+                  </div>
+                </div>
+
+                {/* Search Stats */}
+                <div className="search-stats">
+                  <div className="search-stat">
+                    <span className="stat-label">Elapsed</span>
+                    <span className="stat-value">{String(Math.floor((displayProgress?.elapsed ?? 0) / 60)).padStart(2, "0")}:{String((displayProgress?.elapsed ?? 0) % 60).padStart(2, "0")}</span>
+                  </div>
+                  <div className="search-stat">
+                    <span className="stat-label">Est. Wait</span>
+                    <span className="stat-value">~{displayProgress?.estimatedWait ?? 15}s</span>
+                  </div>
+                  <div className="search-stat">
+                    <span className="stat-label">In Queue</span>
+                    <span className="stat-value">{displayProgress?.queueSize ?? 0} players</span>
+                  </div>
+                </div>
+
+                {/* Cancel Button */}
+                <button
+                  onClick={() => searchingTimeControl && actions.cancelSearch(searchingTimeControl)}
+                  className="cancel-search-btn"
+                >
+                  <X size={18} />
+                  Cancel Search
                 </button>
               </div>
             )}

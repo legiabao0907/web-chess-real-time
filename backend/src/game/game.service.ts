@@ -29,68 +29,108 @@ const TIME_CONTROLS: Record<string, { baseMs: number; incrementMs: number }> = {
   rapid_15_10: { baseMs: 15 * 60_000, incrementMs: 10_000 },
 };
 
-// ── Lua script: atomically dequeue an opponent OR enqueue self ──────────────
-// KEYS[1] = queue key (e.g. chess:queue:blitz_5)
+// ── Lua script: ELO-based atomic matchmaking via ZSET ──────────────────
+// KEYS[1] = queue key (ZSET, e.g. chess:queue:blitz_5)
 // ARGV[1] = current userId
-// ARGV[2] = JSON string of MatchmakingEntry to push if no opponent found
+// ARGV[2] = JSON string of MatchmakingEntry to add if no opponent found
+// ARGV[3] = maxEloDiff (number) — allowed rating difference ±
+// ARGV[4] = current timestamp (ms) for range-expansion tracking
 //
 // Returns:
-//   "MATCHED:<raw JSON of opponent>"  — found an opponent, current user NOT added to queue
-//   "QUEUED"                          — no opponent yet, current user added to queue
-//   "ALREADY_QUEUED"                  — user was already in queue (socketId updated)
-const JOIN_QUEUE_LUA = `
-local key    = KEYS[1]
-local uid    = ARGV[1]
-local entry  = ARGV[2]
+//   "MATCHED:<raw JSON of opponent>"  — found an opponent within range
+//   "QUEUED:<maxEloDiff>"              — no opponent yet, added to queue with current range
+//   "ALREADY_QUEUED"                   — user was already in queue (entry updated)
+//
+// Algorithm:
+//  1. Check if user already in queue → update entry
+//  2. ZRANGEBYSCORE for opponents within [rating-maxEloDiff, rating+maxEloDiff]
+//  3. If found: pick closest-rating opponent, ZREM them, return match
+//  4. If not: ZADD self to queue, return QUEUED
+const MATCHMAKE_LUA = `
+local key        = KEYS[1]
+local uid        = ARGV[1]
+local entry      = ARGV[2]
+local maxDiff    = tonumber(ARGV[3])
 
--- Step 1: scan the list for an existing entry by this user
-local len = redis.call('LLEN', key)
-for i = 0, len - 1 do
-  local raw = redis.call('LINDEX', key, i)
-  local decoded = cjson.decode(raw)
-  if decoded.userId == uid then
-    -- Already in queue — remove old entry, re-add updated one (new socketId), stop scan
-    redis.call('LREM', key, 1, raw)
-    redis.call('RPUSH', key, entry)
-    redis.call('EXPIRE', key, 300)
-    return 'ALREADY_QUEUED'
+-- Step 1: Check if user already in queue (scan by exact member value is tricky in ZSET)
+-- We use ZSCAN to find any entry matching this userId and remove it
+local cursor = '0'
+repeat
+  local scanResult = redis.call('ZSCAN', key, cursor, 'COUNT', 50)
+  cursor = scanResult[1]
+  local members = scanResult[2]
+  for i = 1, #members, 2 do
+    local member = members[i]
+    local decoded = cjson.decode(member)
+    if decoded.userId == uid then
+      -- Already in queue — update with new entry (new socketId), keep same score
+      redis.call('ZREM', key, member)
+      redis.call('ZADD', key, decoded.rating, entry)
+      redis.call('EXPIRE', key, 300)
+      return 'ALREADY_QUEUED'
+    end
+  end
+until cursor == '0'
+
+-- Step 2: Parse rating from entry
+local decoded = cjson.decode(entry)
+local myRating = decoded.rating or 1200
+local minScore = myRating - maxDiff
+local maxScore = myRating + maxDiff
+
+-- Step 3: Find opponents within ELO range
+local candidates = redis.call('ZRANGEBYSCORE', key, minScore, maxScore, 'LIMIT', 0, 20)
+
+-- Step 4: Pick the opponent with the closest rating
+local bestOpponent = nil
+local bestDiff = maxDiff + 1
+
+for i, member in ipairs(candidates) do
+  local opp = cjson.decode(member)
+  if opp.userId ~= uid then
+    local diff = math.abs(opp.rating - myRating)
+    if diff < bestDiff then
+      bestDiff = diff
+      bestOpponent = member
+    end
   end
 end
 
--- Step 2: not in queue — try to pop an opponent from the front
-local head = redis.call('LPOP', key)
-if head then
-  local opponent = cjson.decode(head)
-  if opponent.userId ~= uid then
-    -- Valid match found: return opponent JSON, do NOT push current user
-    return 'MATCHED:' .. head
-  end
-  -- Edge case: somehow same user at front — put them back
-  redis.call('LPUSH', key, head)
+if bestOpponent then
+  -- Match found! Remove opponent from queue
+  redis.call('ZREM', key, bestOpponent)
+  return 'MATCHED:' .. bestOpponent
 end
 
--- Step 3: no opponent — join the queue
-redis.call('RPUSH', key, entry)
+-- Step 5: No opponent — join the queue
+redis.call('ZADD', key, myRating, entry)
 redis.call('EXPIRE', key, 300)
-return 'QUEUED'
+return 'QUEUED:' .. tostring(maxDiff)
 `;
 
-// ── Lua script: atomically remove a user from the queue ──────────────────────
-// KEYS[1] = queue key
+// ── Lua script: atomically remove a user from the ZSET queue ──────────
+// KEYS[1] = queue key (ZSET)
 // ARGV[1] = userId to remove
-// Returns number of entries removed (0 or 1)
+// Returns 1 if removed, 0 if not found
 const LEAVE_QUEUE_LUA = `
 local key = KEYS[1]
 local uid = ARGV[1]
-local len = redis.call('LLEN', key)
-for i = 0, len - 1 do
-  local raw = redis.call('LINDEX', key, i)
-  local decoded = cjson.decode(raw)
-  if decoded.userId == uid then
-    redis.call('LREM', key, 1, raw)
-    return 1
+
+local cursor = '0'
+repeat
+  local scanResult = redis.call('ZSCAN', key, cursor, 'COUNT', 50)
+  cursor = scanResult[1]
+  local members = scanResult[2]
+  for i = 1, #members, 2 do
+    local member = members[i]
+    local decoded = cjson.decode(member)
+    if decoded.userId == uid then
+      redis.call('ZREM', key, member)
+      return 1
+    end
   end
-end
+until cursor == '0'
+
 return 0
 `;
 
@@ -99,7 +139,7 @@ export class GameService implements OnModuleInit {
   private readonly logger = new Logger(GameService.name);
 
   // Cached SHA1 digests for EVALSHA (faster than EVAL after first load)
-  private joinQueueSha: string;
+  private matchmakeSha: string;
   private leaveQueueSha: string;
 
   constructor(
@@ -109,9 +149,9 @@ export class GameService implements OnModuleInit {
 
   /** Pre-load Lua scripts into Redis on startup so we can use EVALSHA */
   async onModuleInit() {
-    this.joinQueueSha  = await this.redisClient.script('LOAD', JOIN_QUEUE_LUA)  as string;
+    this.matchmakeSha  = await this.redisClient.script('LOAD', MATCHMAKE_LUA)  as string;
     this.leaveQueueSha = await this.redisClient.script('LOAD', LEAVE_QUEUE_LUA) as string;
-    this.logger.log('✅ Matchmaking Lua scripts loaded into Redis');
+    this.logger.log('✅ Matchmaking Lua scripts loaded into Redis (ZSET-based)');
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -165,52 +205,55 @@ export class GameService implements OnModuleInit {
   // ──────────────────────────────────────────────────────────────────────
 
   /**
-   * Atomic matchmaking via Lua script.
+   * Atomic ELO-based matchmaking via Lua script.
    *
-   * Replaces the old multi-step (lrange → lrem → lpop → rpush) sequence
-   * that suffered from race conditions when two players joined simultaneously.
+   * Uses a ZSET-based queue where score = rating, enabling efficient
+   * ZRANGEBYSCORE queries for opponents within the allowed ELO range.
    *
    * The Lua script runs entirely inside the Redis server as a single atomic
    * operation — no other command can interleave between steps.
    *
-   * Returns the matched opponent's MatchmakingEntry, or null if queued.
+   * @param entry - MatchmakingEntry with userId, rating, joinedAt
+   * @param maxEloDiff - Allowed ± rating difference (expands over time)
+   * @returns The matched opponent's MatchmakingEntry, or null if queued.
    */
-  async joinQueue(entry: MatchmakingEntry): Promise<MatchmakingEntry | null> {
+  async joinQueue(entry: MatchmakingEntry, maxEloDiff: number = 30): Promise<MatchmakingEntry | null> {
     const key = this.matchmakingKey(entry.timeControl);
     const entryJson = JSON.stringify(entry);
 
     let result: string;
     try {
-      // Use EVALSHA (cached script) for speed; fall back to EVAL if script was evicted
       result = await this.redisClient.evalsha(
-        this.joinQueueSha,
-        1,          // numkeys
-        key,        // KEYS[1]
-        entry.userId, // ARGV[1]
-        entryJson,  // ARGV[2]
+        this.matchmakeSha,
+        1,              // numkeys
+        key,            // KEYS[1]
+        entry.userId,   // ARGV[1]
+        entryJson,      // ARGV[2]
+        String(maxEloDiff), // ARGV[3]
       ) as string;
     } catch (err: unknown) {
       const isNoScript = err instanceof Error && err.message.startsWith('NOSCRIPT');
       if (!isNoScript) throw err;
       // Script was flushed from Redis — reload and retry
-      this.joinQueueSha = await this.redisClient.script('LOAD', JOIN_QUEUE_LUA) as string;
+      this.matchmakeSha = await this.redisClient.script('LOAD', MATCHMAKE_LUA) as string;
       result = await this.redisClient.evalsha(
-        this.joinQueueSha,
+        this.matchmakeSha,
         1,
         key,
         entry.userId,
         entryJson,
+        String(maxEloDiff),
       ) as string;
     }
 
     if (result.startsWith('MATCHED:')) {
       const opponentJson = result.slice('MATCHED:'.length);
-      this.logger.log(`⚡ Lua matchmaking: ${entry.userId} matched an opponent`);
+      this.logger.log(`⚡ ELO matchmaking MATCHED: ${entry.userId} (rating ${entry.rating}, range ±${maxEloDiff})`);
       return JSON.parse(opponentJson) as MatchmakingEntry;
     }
 
-    // 'QUEUED' or 'ALREADY_QUEUED'
-    this.logger.log(`🕐 Lua matchmaking: ${entry.userId} → ${result} (${entry.timeControl})`);
+    // 'QUEUED:{maxEloDiff}' or 'ALREADY_QUEUED'
+    this.logger.log(`🕐 ELO matchmaking ${result}: ${entry.userId} (rating ${entry.rating}, range ±${maxEloDiff}, tc=${entry.timeControl})`);
     return null;
   }
 
@@ -233,6 +276,76 @@ export class GameService implements OnModuleInit {
       this.leaveQueueSha = await this.redisClient.script('LOAD', LEAVE_QUEUE_LUA) as string;
       await this.redisClient.evalsha(this.leaveQueueSha, 1, key, userId);
     }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // ELO Range Expansion Helpers
+  // ──────────────────────────────────────────────────────────────────────
+
+  /** ELO range expansion parameters */
+  private static readonly INITIAL_ELO_RANGE = 30;
+  private static readonly ELO_EXPAND_PER_STEP = 30;
+  private static readonly ELO_EXPAND_INTERVAL_MS = 5000; // 5 seconds
+  private static readonly MAX_ELO_RANGE = 200;
+
+  /**
+   * Calculate the current ELO range for a player based on their wait time.
+   * Range expands by 30 every 5 seconds, starting at ±30, capped at ±200.
+   */
+  static getExpandedEloRange(joinedAt: number): number {
+    const elapsed = Date.now() - joinedAt;
+    const steps = Math.floor(elapsed / GameService.ELO_EXPAND_INTERVAL_MS);
+    const range = GameService.INITIAL_ELO_RANGE + steps * GameService.ELO_EXPAND_PER_STEP;
+    return Math.min(range, GameService.MAX_ELO_RANGE);
+  }
+
+  /**
+   * Get the number of players currently in the queue for a given time control.
+   */
+  async getQueueSize(timeControl: string): Promise<number> {
+    const key = this.matchmakingKey(timeControl);
+    return this.redisClient.zcard(key);
+  }
+
+  /**
+   * Get all queue entries for a time control (for periodic re-match).
+   * Returns array of MatchmakingEntry objects.
+   */
+  async getQueueEntries(timeControl: string): Promise<MatchmakingEntry[]> {
+    const key = this.matchmakingKey(timeControl);
+    const members = await this.redisClient.zrange(key, 0, -1);
+    return members.map((m) => JSON.parse(m) as MatchmakingEntry);
+  }
+
+  /**
+   * Periodic re-match: check all waiting players with expanded ELO ranges.
+   * Called every 5 seconds by the gateway's setInterval.
+   * Returns list of matches found (pairs of entries).
+   */
+  async reMatchWaitingPlayers(
+    timeControl: string,
+  ): Promise<Array<{ player: MatchmakingEntry; opponent: MatchmakingEntry }>> {
+    const entries = await this.getQueueEntries(timeControl);
+    const matches: Array<{ player: MatchmakingEntry; opponent: MatchmakingEntry }> = [];
+
+    for (const entry of entries) {
+      const expandedRange = GameService.getExpandedEloRange(entry.joinedAt);
+      // Only re-match if range has expanded beyond initial
+      if (expandedRange <= GameService.INITIAL_ELO_RANGE) continue;
+
+      // Try matching with expanded range
+      const opponent = await this.joinQueue(entry, expandedRange);
+      if (opponent) {
+        matches.push({ player: entry, opponent });
+      }
+    }
+
+    if (matches.length > 0) {
+      this.logger.log(
+        `🔄 Re-match found ${matches.length} pairs in ${timeControl} queue`,
+      );
+    }
+    return matches;
   }
 
   // ──────────────────────────────────────────────────────────────────────

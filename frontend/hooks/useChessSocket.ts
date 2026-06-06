@@ -54,6 +54,13 @@ export interface PositionAnalysis {
   isDraw: boolean;
 }
 
+export interface SearchProgress {
+  elapsed: number;      // seconds since search started
+  eloRange: number;     // current ± ELO range
+  queueSize: number;    // players in queue
+  estimatedWait: number; // estimated seconds remaining
+}
+
 interface UseChessSocketOptions {
   userId: string;
   username: string;
@@ -94,6 +101,7 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [searchingTimeControl, setSearchingTimeControl] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<PositionAnalysis | null>(null);
+  const [searchProgress, setSearchProgress] = useState<SearchProgress | null>(null);
 
   useEffect(() => {
     saveGameToSession(game);
@@ -122,15 +130,28 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
       console.log("❌ Socket disconnected");
     });
 
-    socket.on("searching", (data: { timeControl: string; message: string }) => {
+    socket.on("searching", (data: { timeControl: string; message: string; eloRange?: number; startedAt?: number }) => {
       setGameStatus("searching");
       setSearchingTimeControl(data.timeControl);
+      if (data.eloRange && data.startedAt) {
+        setSearchProgress({
+          elapsed: 0,
+          eloRange: data.eloRange,
+          queueSize: 0,
+          estimatedWait: 15,
+        });
+      }
+    });
+
+    socket.on("search_progress", (data: SearchProgress) => {
+      setSearchProgress(data);
     });
 
     socket.on("game_start", (data: GameState) => {
       setGame({ ...data, gameId: data.gameId ?? (data as any).id });
       setGameStatus("active");
       setSearchingTimeControl(null);
+      setSearchProgress(null);
       setChatMessages([]);
       setDrawOffered(false);
       setAnalysis(null);
@@ -140,6 +161,7 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
     socket.on("bot_game_start", (data: GameState) => {
       setGame({ ...data, gameId: data.gameId ?? (data as any).id });
       setGameStatus("active");
+      setSearchProgress(null);
       setChatMessages([]);
       setDrawOffered(false);
       setAnalysis(null);
@@ -213,6 +235,7 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
     socket.on("search_cancelled", () => {
       setGameStatus("idle");
       setSearchingTimeControl(null);
+      setSearchProgress(null);
     });
 
     socket.on("error", (data: { message: string }) => {
@@ -235,6 +258,7 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
   const findGame = useCallback(
     (timeControl: string, rating = 1200) => {
       if (!socketRef.current?.connected) return;
+      setSearchProgress({ elapsed: 0, eloRange: 30, queueSize: 0, estimatedWait: 15 });
       socketRef.current.emit("find_game", { userId, username, timeControl, rating });
     },
     [userId, username]
@@ -339,6 +363,7 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
     errorMessage,
     searchingTimeControl,
     analysis,
+    searchProgress,
     actions: {
       findGame,
       cancelSearch,

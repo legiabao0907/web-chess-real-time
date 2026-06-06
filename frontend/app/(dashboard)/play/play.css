@@ -522,47 +522,340 @@
   box-shadow: none;
 }
 
-/* ─── SEARCHING STATE ──────────────────────────────────────────────────────── */
-.searching-state {
+/* ─── PROFESSIONAL MATCHMAKING PANEL ───────────────────────────────────────── */
+
+.matchmaking-subtitle {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: -0.5rem;
+}
+
+.knight-icon {
+  display: block;
+  font-size: 3rem;
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Time Control Cards Grid */
+.tc-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  width: 100%;
+}
+
+@media (max-width: 480px) {
+  .tc-cards {
+    grid-template-columns: 1fr;
+  }
+  .matchmaking-panel {
+    padding: 1.5rem;
+  }
+}
+
+@media (min-width: 481px) and (max-width: 768px) {
+  .tc-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.tc-card {
+  background: #1a1a24;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 0.875rem 0.75rem;
+  cursor: pointer;
+  transition: all 0.25s;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1.5rem;
+  gap: 6px;
+  color: white;
+  position: relative;
+  overflow: hidden;
 }
 
-.searching-spinner {
-  width: 64px;
-  height: 64px;
-  border: 3px solid rgba(226, 48, 255, 0.2);
-  border-top-color: #e230ff;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
+.tc-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  opacity: 0;
+  transition: opacity 0.25s;
+  border: 1px solid var(--tc-color, #a855f7);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--tc-color, #a855f7) 30%, transparent);
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+.tc-card:hover::before {
+  opacity: 0.6;
 }
 
-.searching-text {
-  font-size: 16px;
+.tc-card:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tc-card.selected::before {
+  opacity: 1;
+}
+
+.tc-card.selected {
+  background: color-mix(in srgb, var(--tc-color, #a855f7) 12%, #1a1a24);
+  box-shadow: 0 0 25px color-mix(in srgb, var(--tc-color, #a855f7) 25%, transparent);
+}
+
+.tc-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tc-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.tc-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--tc-color, #a855f7);
+}
+
+.tc-detail {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 500;
+}
+
+.tc-elo {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.8);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
+
+/* Find Match Button */
+.find-match-btn {
+  width: 100%;
+  padding: 1rem;
+  background: linear-gradient(135deg, #e230ff, #a855f7);
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.25s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  letter-spacing: 0.03em;
+}
+
+.find-match-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 35px rgba(226, 48, 255, 0.45);
+}
+
+.find-match-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* ─── SEARCHING STATE: RADAR ANIMATION ─────────────────────────────────────── */
+
+.matchmaking-panel.searching {
+  gap: 1.25rem;
+}
+
+.radar-container {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+}
+
+.radar-ring {
+  position: absolute;
+  border: 2px solid rgba(168, 85, 247, 0.4);
+  border-radius: 50%;
+  animation: pulse-ring 2s ease-out infinite;
+}
+
+.radar-ring.ring-1 {
+  width: 50px;
+  height: 50px;
+  animation-delay: 0s;
+}
+
+.radar-ring.ring-2 {
+  width: 70px;
+  height: 70px;
+  animation-delay: 0.4s;
+}
+
+.radar-ring.ring-3 {
+  width: 90px;
+  height: 90px;
+  animation-delay: 0.8s;
+}
+
+.radar-center {
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, #e230ff, #a855f7);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: white;
+  z-index: 1;
+  box-shadow: 0 0 25px rgba(168, 85, 247, 0.5);
+  animation: float-knight 2s ease-in-out infinite;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.5);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+@keyframes float-knight {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+/* ─── ELO RANGE BAR ────────────────────────────────────────────────────────── */
+
+.elo-range-section {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.elo-range-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 500;
+}
+
+.elo-my-rating {
+  color: #a855f7;
+  font-weight: 700;
+}
+
+.elo-range-bar {
+  position: relative;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.elo-range-fill {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: linear-gradient(90deg, rgba(168, 85, 247, 0.4), #a855f7, rgba(168, 85, 247, 0.4));
+  border-radius: 3px;
+  transition: left 0.5s ease, width 0.5s ease;
+  animation: range-glow 2s ease-in-out infinite;
+}
+
+.elo-range-dot {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 12px;
+  height: 12px;
+  background: #e230ff;
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgba(226, 48, 255, 0.7);
+  z-index: 2;
+}
+
+.elo-range-label-row {
+  text-align: center;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 600;
+}
+
+@keyframes range-glow {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+}
+
+/* ─── SEARCH STATS ─────────────────────────────────────────────────────────── */
+
+.search-stats {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  width: 100%;
+}
+
+.search-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.stat-label {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+.stat-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: white;
+  font-family: var(--font-mono, monospace);
+}
+
+/* ─── CANCEL SEARCH ────────────────────────────────────────────────────────── */
 
 .cancel-search-btn {
   padding: 0.625rem 1.5rem;
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.5);
   font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  justify-content: center;
 }
 
 .cancel-search-btn:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: white;
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
 }
 
 /* ─── CONNECTION INDICATOR ─────────────────────────────────────────────────── */

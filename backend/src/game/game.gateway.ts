@@ -49,6 +49,10 @@ export class GameGateway
     { userId: string; gameId?: string; timeControl?: string; username: string }
   >();
 
+  // Periodic re-match intervals per time control
+  private reMatchIntervals = new Map<string, NodeJS.Timeout>();
+  private static readonly REMATCH_INTERVAL_MS = 5000; // 5 seconds
+
   constructor(
     private readonly gameService: GameService,
     private readonly aiService: AiService,
@@ -60,6 +64,84 @@ export class GameGateway
 
   afterInit(server: Server) {
     this.logger.log('🎮 Chess WebSocket Gateway initialized');
+    this.startReMatchIntervals();
+  }
+
+  /**
+   * Start periodic re-match intervals for all time controls.
+   * Every 5 seconds, check waiting players with expanded ELO ranges.
+   */
+  private startReMatchIntervals() {
+    const timeControls = ['bullet_1', 'blitz_5', 'rapid_10'];
+
+    for (const tc of timeControls) {
+      // Don't duplicate intervals
+      if (this.reMatchIntervals.has(tc)) continue;
+
+      const interval = setInterval(async () => {
+        try {
+          const queueSize = await this.gameService.getQueueSize(tc);
+
+          // Always emit progress to waiting players (for UI updates)
+          if (queueSize > 0) {
+            await this.emitSearchProgress(tc);
+          }
+
+          if (queueSize < 2) return; // Need at least 2 to match
+
+          const matches = await this.gameService.reMatchWaitingPlayers(tc);
+
+          for (const { player, opponent } of matches) {
+            await this.createGameFromMatch(player, opponent, tc);
+          }
+        } catch (err) {
+          this.logger.error(`Re-match error for ${tc}: ${(err as Error)?.message}`);
+        }
+      }, GameGateway.REMATCH_INTERVAL_MS);
+
+      this.reMatchIntervals.set(tc, interval);
+      this.logger.log(`🔄 Re-match interval started for ${tc}`);
+    }
+  }
+
+  /**
+   * Emit search_progress to all waiting clients for a time control.
+   */
+  private async emitSearchProgress(timeControl: string) {
+    const entries = await this.gameService.getQueueEntries(timeControl);
+    const queueSize = entries.length;
+
+    for (const entry of entries) {
+      const expandedRange = GameService.getExpandedEloRange(entry.joinedAt);
+      const elapsed = Math.floor((Date.now() - entry.joinedAt) / 1000);
+      const estimatedWait = this.estimateWait(expandedRange, queueSize);
+
+      // Find the socket for this entry and emit progress
+      for (const [socketId, info] of this.connectedClients) {
+        if (info.userId === entry.userId && info.timeControl === timeControl) {
+          const socket = (this.server.sockets as any).get(socketId);
+          if (socket) {
+            socket.emit('search_progress', {
+              elapsed,
+              eloRange: expandedRange,
+              queueSize,
+              estimatedWait,
+            });
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  /**
+   * Rough estimate of remaining wait time based on ELO range and queue size.
+   */
+  private estimateWait(currentRange: number, queueSize: number): number {
+    if (queueSize >= 2) return 5; // Likely matched soon
+    // More players = faster match; wider range = closer to finding someone
+    const baseWait = Math.max(5, 30 - queueSize * 3);
+    return Math.max(5, baseWait - Math.floor(currentRange / 30));
   }
 
   async handleConnection(client: Socket) {
@@ -158,74 +240,92 @@ export class GameGateway
       joinedAt: Date.now(),
     };
 
-    this.logger.log(`User ${username} searching for ${timeControl} game`);
-    client.emit('searching', { timeControl, message: 'Looking for opponent...' });
+    const initialRange = 30; // Start searching at ±30 ELO
+    this.logger.log(
+      `User ${username} (ELO ${rating}) searching for ${timeControl} game (initial range ±${initialRange})`,
+    );
 
-    const opponent = await this.gameService.joinQueue(entry);
+    // Emit searching status with initial range info
+    client.emit('searching', {
+      timeControl,
+      message: 'Looking for opponent...',
+      eloRange: initialRange,
+      startedAt: Date.now(),
+    });
+
+    // Try atomic match via Lua script with initial ELO range
+    const opponent = await this.gameService.joinQueue(entry, initialRange);
 
     if (opponent) {
-      const gameId = this.gameService.generateGameId();
-
-      const whiteIsRequester = Math.random() > 0.5;
-      const white = whiteIsRequester ? entry : opponent;
-      const black = whiteIsRequester ? opponent : entry;
-
-      const gameState = this.gameService.createGameState(
-        gameId,
-        { userId: white.userId, username: white.username },
-        { userId: black.userId, username: black.username },
-        timeControl,
-      );
-
-      await this.gameService.saveGame(gameState);
-      await this.gameService.setUserCurrentGame(white.userId, gameId);
-      await this.gameService.setUserCurrentGame(black.userId, gameId);
-
-      const clientInfo = this.connectedClients.get(client.id);
-      if (clientInfo) {
-        clientInfo.gameId = gameId;
-        clientInfo.timeControl = undefined;
-      }
-
-      await client.join(gameId);
-
-      const opponentSocketId = opponent.socketId;
-      const opponentSocket = (this.server.sockets as any).get(opponentSocketId);
-
-      if (opponentSocket) {
-        await opponentSocket.join(gameId);
-        const opponentInfo = this.connectedClients.get(opponentSocketId);
-        if (opponentInfo) {
-          opponentInfo.gameId = gameId;
-          opponentInfo.timeControl = undefined;
-        }
-      } else {
-        this.logger.warn(`Opponent socket ${opponentSocketId} not found in this instance`);
-      }
-
-      const gameStartData = {
-        gameId: gameState.id,
-        fen: gameState.fen,
-        pgn: gameState.pgn,
-        whiteId: gameState.whiteId,
-        blackId: gameState.blackId,
-        whiteUsername: gameState.whiteUsername,
-        blackUsername: gameState.blackUsername,
-        status: gameState.status,
-        timeControl: gameState.timeControl,
-        whiteTimeMs: gameState.whiteTimeMs,
-        blackTimeMs: gameState.blackTimeMs,
-        turn: gameState.turn,
-        moveHistory: gameState.moveHistory,
-        lastMoveAt: gameState.lastMoveAt,
-      };
-
-      this.server.to(gameId).emit('game_start', gameStartData);
-
-      this.logger.log(
-        `Game ${gameId} started: ${white.username}(W) vs ${black.username}(B)`,
-      );
+      await this.createGameFromMatch(entry, opponent, timeControl);
     }
+  }
+
+  /**
+   * Create a game from two matched players and notify them.
+   */
+  private async createGameFromMatch(
+    player1: MatchmakingEntry,
+    player2: MatchmakingEntry,
+    timeControl: string,
+  ) {
+    const gameId = this.gameService.generateGameId();
+
+    const whiteIsRequester = Math.random() > 0.5;
+    const white = whiteIsRequester ? player1 : player2;
+    const black = whiteIsRequester ? player2 : player1;
+
+    const gameState = this.gameService.createGameState(
+      gameId,
+      { userId: white.userId, username: white.username },
+      { userId: black.userId, username: black.username },
+      timeControl,
+    );
+
+    await this.gameService.saveGame(gameState);
+    await this.gameService.setUserCurrentGame(white.userId, gameId);
+    await this.gameService.setUserCurrentGame(black.userId, gameId);
+
+    // Update connectedClients for both players
+    for (const [socketId, info] of this.connectedClients) {
+      if (info.userId === player1.userId || info.userId === player2.userId) {
+        info.gameId = gameId;
+        info.timeControl = undefined;
+      }
+    }
+
+    // Join both sockets to the game room
+    const socket1 = (this.server.sockets as any).get(player1.socketId);
+    const socket2 = (this.server.sockets as any).get(player2.socketId);
+
+    if (socket1) await socket1.join(gameId);
+    if (socket2) await socket2.join(gameId);
+
+    if (!socket1) this.logger.warn(`Socket ${player1.socketId} not found for ${player1.userId}`);
+    if (!socket2) this.logger.warn(`Socket ${player2.socketId} not found for ${player2.userId}`);
+
+    const gameStartData = {
+      gameId: gameState.id,
+      fen: gameState.fen,
+      pgn: gameState.pgn,
+      whiteId: gameState.whiteId,
+      blackId: gameState.blackId,
+      whiteUsername: gameState.whiteUsername,
+      blackUsername: gameState.blackUsername,
+      status: gameState.status,
+      timeControl: gameState.timeControl,
+      whiteTimeMs: gameState.whiteTimeMs,
+      blackTimeMs: gameState.blackTimeMs,
+      turn: gameState.turn,
+      moveHistory: gameState.moveHistory,
+      lastMoveAt: gameState.lastMoveAt,
+    };
+
+    this.server.to(gameId).emit('game_start', gameStartData);
+
+    this.logger.log(
+      `Game ${gameId} started: ${white.username}(W, ELO ${white.rating}) vs ${black.username}(B, ELO ${black.rating})`,
+    );
   }
 
   @SubscribeMessage('cancel_search')
@@ -237,6 +337,7 @@ export class GameGateway
     const info = this.connectedClients.get(client.id);
     if (info) info.timeControl = undefined;
     client.emit('search_cancelled', { message: 'Search cancelled' });
+    this.logger.log(`User ${data.userId} cancelled search for ${data.timeControl}`);
   }
 
   // ──────────────────────────────────────────────────────────────────────
