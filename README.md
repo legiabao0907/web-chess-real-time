@@ -991,3 +991,257 @@ erDiagram
 | `tournament:game:{gameId}` | String (JSON) | Reverse lookup: { tournamentId, round } |
 | `chat:room:{roomId}:messages` | List | Last 50 messages (cache) |
 | `game:{gameId}` | Hash | Active game state (FEN, PGN, clocks, etc.) |
+
+---
+
+## Cấu Trúc Codebase
+
+```
+web-datn/
+├── README.md                          # Tài liệu hệ thống (file này)
+├── CLAUDE.md                          # Hướng dẫn phát triển cho AI Agent
+├── docker-compose.yml                 # Docker Compose cho toàn bộ stack
+│
+├── backend/                           # ⚙️ NestJS Backend (TypeScript)
+│   ├── package.json                   # Dependencies & scripts
+│   ├── tsconfig.json                  # TypeScript config
+│   ├── tsconfig.build.json            # TypeScript build config
+│   ├── nest-cli.json                  # NestJS CLI config
+│   ├── drizzle.config.ts              # Drizzle ORM config
+│   ├── Dockerfile                     # Docker image cho backend
+│   ├── docker-compose.yml             # Docker Compose override
+│   ├── Procfile                       # Railway deploy config
+│   ├── railway.toml                   # Railway settings
+│   │
+│   ├── drizzle/                       # Database Migrations
+│   │   ├── 0000_fearless_betty_brant.sql
+│   │   └── meta/
+│   │       ├── _journal.json
+│   │       └── 0000_snapshot.json
+│   │
+│   ├── migrations/                    # SQL Migrations (thủ công)
+│   │   └── add_moves_column.sql
+│   │
+│   ├── src/                           # 🧩 Source Code
+│   │   ├── main.ts                    # Entry point — bootstrap NestJS app
+│   │   ├── app.module.ts              # Root module
+│   │   ├── app.controller.ts          # Root controller
+│   │   ├── app.service.ts             # Root service
+│   │   │
+│   │   ├── auth/                      # 🔐 Xác thực (JWT)
+│   │   │   ├── auth.module.ts
+│   │   │   ├── auth.controller.ts     # POST /auth/login, /auth/register
+│   │   │   ├── auth.service.ts        # Hash password, tạo/verify JWT
+│   │   │   └── dto/                   # Data Transfer Objects
+│   │   │
+│   │   ├── user/                      # 👤 Quản lý người dùng
+│   │   │   ├── user.module.ts
+│   │   │   ├── user.controller.ts     # GET/PATCH /user/me, friends API
+│   │   │   ├── user.service.ts
+│   │   │   ├── dto/
+│   │   │   └── guards/                # Auth guards (JWT, WebSocket)
+│   │   │
+│   │   ├── game/                      # ♟️ Logic game & matchmaking
+│   │   │   ├── game.module.ts
+│   │   │   ├── game.gateway.ts        # WebSocket /chess — join_queue, make_move, resign
+│   │   │   ├── game.controller.ts     # REST API — GET /game/history, /game/:id
+│   │   │   ├── game.service.ts        # Lua scripts, game state, clock, persistence
+│   │   │   ├── README.md
+│   │   │   └── dto/
+│   │   │
+│   │   ├── tournament/                # 🏆 Giải đấu (Swiss System)
+│   │   │   ├── tournament.module.ts
+│   │   │   ├── tournament.controller.ts  # CRUD tournaments, join/leave
+│   │   │   ├── tournament.gateway.ts     # WebSocket /tournament — real-time updates
+│   │   │   ├── tournament.service.ts     # Tournament CRUD, round management
+│   │   │   └── tournament-swiss.service.ts  # Swiss pairing algorithm
+│   │   │
+│   │   ├── chat/                      # 💬 Chat 1-1 (Direct Message)
+│   │   │   ├── chat.module.ts
+│   │   │   ├── chat.gateway.ts        # WebSocket /chat — send_dm, send_direct_message
+│   │   │   ├── chat.service.ts        # Message persistence, cache
+│   │   │   └── dto/
+│   │   │
+│   │   ├── watch/                     # 👁️ Spectator Mode
+│   │   │   ├── watch.module.ts
+│   │   │   ├── watch.gateway.ts       # WebSocket /watch — watch_game, game_update
+│   │   │   └── watch.service.ts
+│   │   │
+│   │   ├── ai/                        # 🤖 Stockfish AI Integration
+│   │   │   ├── ai.module.ts
+│   │   │   └── ai.service.ts          # Minimax + Alpha-Beta, gọi Stockfish
+│   │   │
+│   │   ├── leaderboard/               # 📊 Bảng xếp hạng ELO
+│   │   │   ├── leaderboard.module.ts
+│   │   │   ├── leaderboard.gateway.ts # WebSocket /leaderboard — real-time rankings
+│   │   │   ├── leaderboard.service.ts # Redis Sorted Set, ELO FIDE calculation
+│   │   │   └── dto/
+│   │   │
+│   │   ├── redis/                     # 🗄️ Redis Module
+│   │   │   └── redis.module.ts        # Redis client provider (ioredis)
+│   │   │
+│   │   └── drizzle/                   # 🗃️ Database Layer (Drizzle ORM)
+│   │       ├── drizzle.module.ts      # Drizzle provider
+│   │       ├── seed.ts                # Database seeder
+│   │       ├── schema/                # Table definitions
+│   │       │   ├── schema.ts          # Re-export all schemas
+│   │       │   ├── users.schema.ts
+│   │       │   ├── game.schema.ts
+│   │       │   ├── tournament.schema.ts
+│   │       │   ├── chat.schema.ts
+│   │       │   └── profileInfo.schema.ts
+│   │       └── types/                 # Generated TypeScript types
+│   │
+│   └── test/                          # 🧪 E2E Tests
+│       ├── app.e2e-spec.ts
+│       └── jest-e2e.json
+│
+├── frontend/                          # 🎨 Next.js 16 Frontend (React 19)
+│   ├── package.json                   # Dependencies & scripts
+│   ├── tsconfig.json                  # TypeScript config
+│   ├── next.config.ts                 # Next.js configuration
+│   ├── middleware.ts                  # Auth middleware (route protection)
+│   ├── components.json                # shadcn/ui config
+│   ├── postcss.config.mjs             # PostCSS config
+│   ├── eslint.config.mjs              # ESLint config
+│   ├── Dockerfile                     # Docker image cho frontend
+│   ├── ecosystem.config.js            # PM2 config
+│   │
+│   ├── app/                           # 📄 Next.js App Router
+│   │   ├── layout.tsx                 # Root layout
+│   │   ├── page.tsx                   # Landing page
+│   │   ├── globals.css                # Global styles
+│   │   ├── favicon.ico
+│   │   │
+│   │   ├── (auth)/                    # 🔓 Unauthenticated routes
+│   │   │   ├── login/                 # Trang đăng nhập
+│   │   │   └── register/              # Trang đăng ký
+│   │   │
+│   │   ├── (dashboard)/               # 🔒 Authenticated routes
+│   │   │   ├── layout.tsx             # Dashboard layout (Navbar + Footer)
+│   │   │   ├── dashboard.css          # Dashboard styles
+│   │   │   ├── home/                  # Trang chủ
+│   │   │   ├── play/                  # Chơi cờ — matchmaking
+│   │   │   ├── play-bot/              # Chơi với AI
+│   │   │   ├── tournaments/           # Danh sách giải đấu
+│   │   │   ├── tournament-game/       # Trận đấu trong giải
+│   │   │   ├── watch/                 # Xem trận trực tiếp
+│   │   │   ├── archives/              # Lịch sử trận đấu
+│   │   │   ├── ranks/                 # Bảng xếp hạng
+│   │   │   ├── live/                  # Các trận đang diễn ra
+│   │   │   └── friends/               # Quản lý bạn bè
+│   │   │
+│   │   └── api/                       # API Routes (Next.js)
+│   │       └── auth/                  # Auth proxy routes
+│   │
+│   ├── components/                    # 🧱 UI Components
+│   │   ├── chess/                     # Bàn cờ & logic cờ vua
+│   │   │   ├── chessboard.tsx         # react-chessboard wrapper
+│   │   │   ├── ChessReplay.tsx        # Xem lại ván cờ (PGN replay)
+│   │   │   ├── EvaluationBar.tsx      # Thanh đánh giá (Stockfish eval)
+│   │   │   └── OpponentProfilePopup.tsx  # Popup thông tin đối thủ
+│   │   │
+│   │   ├── common/                    # Shared components
+│   │   │   ├── Navbar.tsx             # Thanh điều hướng
+│   │   │   ├── Footer.tsx             # Chân trang
+│   │   │   ├── ChatDrawer.tsx         # Khung chat 1-1
+│   │   │   ├── ClientOnly.tsx         # Wrapper render chỉ ở client
+│   │   │   ├── ProfilePanel.tsx       # Panel hồ sơ cá nhân
+│   │   │   ├── ProfilePanel.css
+│   │   │   ├── PublicProfilePanel.tsx # Hồ sơ công khai
+│   │   │   └── PublicProfilePanel.css
+│   │   │
+│   │   └── ui/                        # shadcn/ui primitives (Button, Input, Dialog...)
+│   │
+│   ├── hooks/                         # 🪝 Custom React Hooks
+│   │   ├── useChessSocket.ts          # WebSocket /chess — game real-time
+│   │   ├── useFriendChat.ts           # WebSocket /chat — direct message
+│   │   ├── useWatchSocket.ts          # WebSocket /watch — spectator mode
+│   │   ├── useLeaderboard.ts          # WebSocket /leaderboard — rankings
+│   │   └── useStockfish.ts            # Stockfish WASM trong browser
+│   │
+│   ├── store/                         # 🏪 Zustand State Stores
+│   │   ├── useChatStore.ts            # Chat rooms, messages, unread count
+│   │   ├── useFriendStore.ts          # Friend list, friend requests
+│   │   ├── useProfileStore.ts         # User profile, stats
+│   │   └── useWatchStore.ts           # Spectator state
+│   │
+│   ├── lib/                           # 📚 Utility Libraries
+│   │   ├── api.ts                     # API fetch wrapper (auth headers)
+│   │   ├── auth.ts                    # Auth helpers (token management)
+│   │   └── utils.ts                   # General utilities
+│   │
+│   ├── types/                         # 📐 TypeScript Type Definitions
+│   │
+│   └── public/                        # 🌐 Static Assets
+│       ├── stockfish.js               # Stockfish engine (non-WASM fallback)
+│       └── stockfish-worker.js        # Stockfish Web Worker
+```
+
+### Mô Tả Kiến Trúc Tổng Quan
+
+| Lớp | Công Nghệ | Vai Trò |
+|-----|-----------|---------|
+| **Frontend** | Next.js 16 + React 19 | UI, routing, client-side state (Zustand), Socket.IO client |
+| **Backend** | NestJS + TypeScript | REST API, WebSocket gateways, business logic, validation |
+| **Database** | PostgreSQL + Drizzle ORM | Persistent storage: users, games, tournaments, chat |
+| **Cache** | Redis (ioredis) | Real-time game state, matchmaking queues, leaderboard, online users |
+| **Real-time** | Socket.IO | WebSocket communication: game, chat, tournament, watch, leaderboard |
+| **AI** | Stockfish + Minimax | Bot opponent — Stockfish WASM (frontend) + Minimax (backend fallback) |
+| **Chess Logic** | chess.js | Move validation, FEN/PGN parsing, game status detection |
+
+### Luồng Dữ Liệu Chính
+
+```mermaid
+graph LR
+    subgraph "Frontend (Next.js)"
+        UI[React Components]
+        Store[Zustand Stores]
+        Hooks[Custom Hooks]
+        Socket[Socket.IO Client]
+    end
+
+    subgraph "Backend (NestJS)"
+        GW[WebSocket Gateways]
+        SVC[Services]
+        CTRL[Controllers]
+    end
+
+    subgraph "Data Layer"
+        Redis[(Redis Cache)]
+        PG[(PostgreSQL)]
+    end
+
+    UI <--> Store
+    Store <--> Hooks
+    Hooks <--> Socket
+    Socket <-->|WebSocket| GW
+    UI -->|REST API| CTRL
+    CTRL --> SVC
+    GW --> SVC
+    SVC <--> Redis
+    SVC <--> PG
+```
+
+### Các WebSocket Namespace
+
+| Namespace | Gateway | Chức Năng |
+|-----------|---------|-----------|
+| `/chess` | `GameGateway` | Matchmaking, đi cờ, đầu hàng, game events |
+| `/chat` | `ChatGateway` | Direct message 1-1, typing indicator |
+| `/tournament` | `TournamentGateway` | Real-time tournament updates, countdown |
+| `/watch` | `WatchGateway` | Spectator mode, live game updates |
+| `/leaderboard` | `LeaderboardGateway` | Bảng xếp hạng ELO real-time |
+
+### Các Redis Key Pattern
+
+| Key Pattern | Type | TTL | Purpose |
+|---|---|---|---|
+| `chess:queue:{timeControl}` | ZSET | — | Hàng đợi matchmaking (score = ELO) |
+| `game:{gameId}` | Hash | 24h | Active game state |
+| `chess:leaderboard:{category}` | ZSET | — | ELO ranking |
+| `chess:player:{userId}:{category}` | Hash | 7d | Player stats cache |
+| `chess:online_users` | Hash | — | userId → socketId mapping |
+| `tournament:{id}:round:{n}` | String | — | Tournament round data (JSON) |
+| `tournament:{id}:currentRound` | String | — | Current round number |
+| `chat:room:{roomId}:messages` | List | 1h | Last 50 messages cache |
