@@ -16,140 +16,128 @@
 | `Redis_Module` | `backend/src/redis/redis.module.ts` | ✅ Khớp (`@Global()`) |
 | `Database_Access_Layer` | `backend/src/drizzle/drizzle.module.ts` | ✅ Khớp |
 
-> **Kết luận**: Sơ đồ subsystem **đã được hiệu chỉnh** (2026-06-12): sửa chiều phụ thuộc AI↔Gameplay, bổ sung Gateway namespaces, thêm các phụ thuộc còn thiếu (GAMEPLAY→USER, TOUR→USER, TOUR→REDIS_M).
+> **Kết luận**: Sơ đồ subsystem **đã được hiệu chỉnh** (2026-06-12): sửa chiều phụ thuộc, bổ sung Gateway namespaces, trình bày lại theo chuẩn UML Package Diagram với `«stereotype»`.
 
 ---
 
 ## 1. Subsystem / Package Diagram (Tổng Quan Hệ Thống)
 
 ```mermaid
-graph TB
-    %% ── Style ──────────────────────────────────────────────
+flowchart TB
+    %% ── Style Definitions ──────────────────────────────
     classDef client fill:#1e3a5f,stroke:#4fc3f7,color:#e0f0ff
-    classDef backend fill:#1b3a1b,stroke:#66bb6a,color:#d4f5d4
-    classDef data fill:#3e2723,stroke:#ff8a65,color:#ffe0d0
+    classDef business fill:#1b3a1b,stroke:#66bb6a,color:#d4f5d4
     classDef infra fill:#2d1f3d,stroke:#ce93d8,color:#f3e5f5
+    classDef data fill:#3e2723,stroke:#ff8a65,color:#ffe0d0
 
-    %% ======================================================
-    %% CLIENT
-    %% ======================================================
-    subgraph Client_Tier["🌐 Client Tier"]
-        NEXT["NextJS_Client_Application<br/><i>React 19 · Zustand · Socket.IO Client</i>"]
+    %% ═══════════════════════════════════════════════
+    %% CLIENT TIER
+    %% ═══════════════════════════════════════════════
+    subgraph CLIENT["🌐 Client Tier"]
+        direction LR
+        NEXT["Next.js Client<br/><i>React 19 · Zustand · Socket.IO Client</i>"]
     end
 
-    %% ======================================================
-    %% BACKEND (NestJS)
-    %% ======================================================
-    subgraph Backend_Tier["⚙️ Backend Tier — NestJS"]
+    %% ═══════════════════════════════════════════════
+    %% BACKEND TIER
+    %% ═══════════════════════════════════════════════
+    subgraph BACKEND["⚙️ Backend Tier — NestJS"]
         direction TB
 
-        subgraph Auth_Sub["🔐 Authentication"]
-            AUTH["&gt; Auth_Module<br/><i>JWT · Guards · Login/Register<br/>📡 REST</i>"]
+        subgraph BUSINESS["📦 Business Modules"]
+            direction LR
+            AUTH["AuthModule<br/><i>JWT · Guards</i><br/>📡 REST"]
+            USER["UserModule<br/><i>Profile · Friends</i><br/>📡 REST"]
+            GAME["GameModule<br/><i>Matchmaking · Gameplay</i><br/>🔌 WS /chess · 📡 REST"]
+            AI["AIModule<br/><i>Stockfish WASM</i>"]
+            TOUR["TournamentModule<br/><i>Swiss Pairing</i><br/>🔌 WS /tournament · 📡 REST"]
+            CHAT["ChatModule<br/><i>Direct Message 1-1</i><br/>🔌 WS /chat"]
+            WATCH["WatchModule<br/><i>Spectator Mode</i><br/>🔌 WS /watch"]
+            LB["LeaderboardModule<br/><i>ELO FIDE · Rankings</i><br/>🔌 WS /leaderboard · 📡 REST"]
         end
 
-        subgraph User_Sub["👤 User"]
-            USER["&gt; User_Module<br/><i>Profile · Friends · Manage<br/>📡 REST</i>"]
-        end
-
-        subgraph Game_Sub["♟️ Game Core"]
-            MATCH["&gt; Matchmaking_Module<br/><i>ELO Queue · Lua Scripts<br/>🔌 WS /chess</i>"]
-            GAMEPLAY["&gt; Gameplay_Module<br/><i>Moves · Clock · Validation<br/>🔌 WS /chess · 📡 REST</i>"]
-            AI["&gt; AI_Module<br/><i>Stockfish WASM<br/>📦 imported by GameModule only</i>"]
-        end
-
-        subgraph Tour_Sub["🏆 Tournament"]
-            TOUR["&gt; Tournament_Module<br/><i>Swiss Pairing · Standings<br/>🔌 WS /tournament · 📡 REST</i>"]
-        end
-
-        subgraph Social_Sub["💬 Social"]
-            CHAT["&gt; Chat_Module<br/><i>Direct Message 1-1<br/>🔌 WS /chat</i>"]
-            WATCH["&gt; Watch_Module<br/><i>Spectator Mode<br/>🔌 WS /watch</i>"]
-        end
-
-        subgraph Rank_Sub["📊 Ranking"]
-            LB["&gt; Leaderboard_Module<br/><i>ELO FIDE · Rankings<br/>🔌 WS /leaderboard · 📡 REST</i>"]
-        end
-
-        subgraph Infra_Sub["🔧 Infrastructure"]
-            REDIS_M["&gt; Redis_Module<br/><i>Client · Lua Scripts<br/>🌐 @Global() provider</i>"]
+        subgraph INFRA["🔧 Infrastructure"]
+            direction LR
+            REDIS_M["RedisModule<br/><i>ioredis client</i><br/>🌐 @Global()"]
+            DRIZZLE["DrizzleModule<br/><i>Drizzle ORM · Migrations</i>"]
         end
     end
 
-    %% ======================================================
-    %% DATA LAYER
-    %% ======================================================
-    subgraph Data_Tier["🗄️ Data Tier"]
-        DRIZZLE["&gt; Database_Access_Layer<br/><i>Drizzle ORM · Migrations</i>"]
+    %% ═══════════════════════════════════════════════
+    %% DATA TIER
+    %% ═══════════════════════════════════════════════
+    subgraph DATA["🗄️ Data Tier"]
+        direction LR
         PG[("PostgreSQL<br/><i>users · games · tournaments<br/>messages · chat_rooms</i>")]
         REDIS_D[("Redis<br/><i>Game State · Online Users<br/>Matchmaking Queue · Cache</i>")]
     end
 
-    %% ======================================================
-    %% RELATIONSHIPS — Client → Backend
-    %% ======================================================
-    NEXT -.->|"REST"| AUTH
-    NEXT -.->|"REST"| USER
-    NEXT -.->|"WS /chess"| MATCH
-    NEXT -.->|"WS /chess"| GAMEPLAY
-    NEXT -.->|"REST + WS /tournament"| TOUR
-    NEXT -.->|"WS /chat"| CHAT
-    NEXT -.->|"WS /watch"| WATCH
-    NEXT -.->|"REST + WS /leaderboard"| LB
+    %% ═══════════════════════════════════════════════
+    %% 1. Client → Backend («REST» / «WebSocket»)
+    %% ═══════════════════════════════════════════════
+    NEXT -.->|"«REST»"| AUTH
+    NEXT -.->|"«REST»"| USER
+    NEXT -.->|"«WebSocket» /chess"| GAME
+    NEXT -.->|"«REST+WS» /tournament"| TOUR
+    NEXT -.->|"«WebSocket» /chat"| CHAT
+    NEXT -.->|"«WebSocket» /watch"| WATCH
+    NEXT -.->|"«REST+WS» /leaderboard"| LB
 
-    %% ======================================================
-    %% RELATIONSHIPS — Backend Module Inter-dependencies
-    %% ======================================================
-    AUTH -.->|"validate"| USER
-    USER -.->|"read/write"| DRIZZLE
-    AUTH -.->|"read/write"| DRIZZLE
+    %% ═══════════════════════════════════════════════
+    %% 2. Inter-module «import»
+    %% ═══════════════════════════════════════════════
+    AUTH -.->|"«import»"| USER
+    GAME -.->|"«import»"| AI
+    GAME -.->|"«import»"| USER
+    GAME -.->|"«import»"| LB
+    GAME -.->|"«import»"| WATCH
+    GAME -.->|"«import»"| TOUR
+    TOUR -.->|"«import»"| USER
+    TOUR -.->|"«import»"| GAME
 
-    MATCH -.->|"find opponent"| GAMEPLAY
-    MATCH -.->|"queue ops"| REDIS_M
-    GAMEPLAY -.->|"validate user"| USER
-    GAMEPLAY -.->|"state r/w"| REDIS_M
-    GAMEPLAY -.->|"elo update"| LB
-    GAMEPLAY -.->|"bot move"| AI
-    GAMEPLAY -.->|"broadcast"| WATCH
-    GAMEPLAY -.->|"tour game"| TOUR
-    GAMEPLAY -.->|"persist game"| DRIZZLE
+    %% ═══════════════════════════════════════════════
+    %% 3. Business → Infrastructure «access»
+    %% ═══════════════════════════════════════════════
+    AUTH -.->|"«access»"| DRIZZLE
+    USER -.->|"«access»"| DRIZZLE
+    GAME -.->|"«access»"| REDIS_M
+    GAME -.->|"«access»"| DRIZZLE
+    TOUR -.->|"«access»"| REDIS_M
+    TOUR -.->|"«access»"| DRIZZLE
+    CHAT -.->|"«access»"| REDIS_M
+    CHAT -.->|"«access»"| DRIZZLE
+    WATCH -.->|"«access»"| REDIS_M
+    LB -.->|"«access»"| REDIS_M
+    LB -.->|"«access»"| DRIZZLE
 
-    TOUR -.->|"validate user"| USER
-    TOUR -.->|"pairing · standings"| DRIZZLE
-    TOUR -.->|"cache rounds"| REDIS_M
-    TOUR -.->|"create game"| GAMEPLAY
+    %% ═══════════════════════════════════════════════
+    %% 4. Infra → Data Stores («commands» / «SQL»)
+    %% ═══════════════════════════════════════════════
+    REDIS_M -.->|"«commands»"| REDIS_D
+    DRIZZLE -.->|"«SQL»"| PG
 
-    CHAT -.->|"online users"| REDIS_M
-    CHAT -.->|"history"| DRIZZLE
-
-    WATCH -.->|"live state"| REDIS_M
-
-    LB -.->|"read/write elo"| DRIZZLE
-
-    %% ======================================================
-    %% RELATIONSHIPS — Infra → Data
-    %% ======================================================
-    REDIS_M -.->|"commands"| REDIS_D
-    DRIZZLE -.->|"SQL"| PG
-
-    %% ======================================================
-    %% APPLY STYLES
-    %% ======================================================
+    %% ═══════════════════════════════════════════════
+    %% Apply Styles
+    %% ═══════════════════════════════════════════════
     class NEXT client
-    class AUTH,USER,MATCH,GAMEPLAY,TOUR,CHAT,WATCH,AI,LB backend
-    class REDIS_M infra
-    class DRIZZLE,PG,REDIS_D data
+    class AUTH,USER,GAME,AI,TOUR,CHAT,WATCH,LB business
+    class REDIS_M,DRIZZLE infra
+    class PG,REDIS_D data
 ```
 
 ---
 
 > **Ghi chú:**
-> - `&gt;` biểu thị **Subsystem Stereotype** (phân hệ con trong UML Package Diagram).
-> - Mũi tên nét đứt `-.->` thể hiện quan hệ **phụ thuộc** (dependency): A → B nghĩa là A phụ thuộc vào B (A import/call B).
-> - `📡 REST` = Giao tiếp qua HTTP REST API (Controller); `🔌 WS /namespace` = Giao tiếp WebSocket thời gian thực (Gateway).
-> - `🌐 @Global() provider` = Module được đánh dấu `@Global()`, tự động có sẵn trong mọi module mà không cần import.
-> - `Matchmaking_Module` và `Gameplay_Module` được tách riêng trong sơ đồ để làm rõ trách nhiệm; trong code, cả hai nằm trong `GameModule`.
-> - `AiModule` được import **duy nhất** bởi `GameModule` (không có trong `app.module.ts`), nên được đặt lồng trong `Game Core`.
+> - **`«stereotype»`** trên mũi tên thể hiện **kiểu quan hệ** trong UML Package Diagram.
+> - **`«REST»`** = HTTP REST API (Controller); **`«WebSocket» /ns`** = Real-time Gateway với namespace.
+> - **`«import»`** = Module A import Module B (A phụ thuộc vào B). VD: `GameModule` import `AiModule`.
+> - **`«access»`** = Module truy cập vào tầng Infrastructure (Database / Cache).
+> - **`«commands»`** / **`«SQL»`** = Giao tiếp ở mức protocol tới Data Store.
+> - `📡 REST` / `🔌 WS` / `🌐 @Global()` trong label là icon chỉ **kênh giao tiếp** của từng module.
+> - `Matchmaking` + `Gameplay` được gộp trong `GameModule` để giản lược; trong code chúng nằm trong `game.service.ts` + `game.gateway.ts`.
+> - `AiModule` được import **duy nhất** bởi `GameModule` (không có trong `app.module.ts`), nên có mũi tên `«import»` từ `GameModule` → `AiModule`.
 > - Gateway namespaces: `/chess` (GameGateway), `/watch` (WatchGateway), `/chat` (ChatGateway), `/tournament` (TournamentGateway), `/leaderboard` (LeaderboardGateway).
+> - `RedisModule` được đánh dấu `@Global()` → tự động khả dụng trong mọi module, nhưng sơ đồ vẫn thể hiện `«access»` để làm rõ module nào **thực sự sử dụng** Redis.
 
 ---
 
