@@ -994,6 +994,1207 @@ erDiagram
 
 ---
 
+## Class Diagrams — Sơ Đồ Lớp Chi Tiết
+
+> **Mục đích**: Class Diagram mô tả **cấu trúc tĩnh** của hệ thống — có những class nào, mỗi class có thuộc tính & phương thức gì, và chúng quan hệ với nhau ra sao.
+>
+> **Cách đọc**: 
+> - `+method()` = Public method (ai cũng gọi được)
+> - `-method()` / `-field` = Private (chỉ nội bộ class dùng)
+> - `-->` = Association (class này dùng class kia)
+> - `..>` = Dependency (phụ thuộc lỏng, truyền qua tham số)
+> - Mỗi **hộp** là một class, chia làm 3 phần: Tên class | Thuộc tính | Phương thức
+
+---
+
+### 1. Backend Class Diagram — Tổng Quan Toàn Bộ Hệ Thống
+
+Sơ đồ này cho thấy **toàn bộ class chính** trong backend NestJS và mối quan hệ giữa chúng.
+
+```mermaid
+classDiagram
+    direction TB
+
+    %% ──────────────── GATEWAYS (WebSocket) ────────────────
+    class GameGateway {
+        -Map~string~ connectedClients
+        -Map~string~ matchmakingTimers
+        +handleConnection(client)
+        +handleDisconnect(client)
+        +joinQueue(data)
+        +leaveQueue()
+        +makeMove(data)
+        +resign()
+        +offerDraw()
+        +respondDraw(data)
+        +startBotGame(data)
+        +triggerEloUpdate(gameId)
+    }
+
+    class WatchGateway {
+        -Map~string~ spectators
+        -Map~string~ spectatorMeta
+        +handleWatchGame(data)
+        +handleLeaveWatch()
+        +broadcastGameUpdate(gameId, move)
+        +broadcastGameOver(gameId, result)
+    }
+
+    class ChatGateway {
+        -Map~string~ clients
+        -Map~string~ userSockets
+        +identify(data)
+        +joinDm(data)
+        +sendDm(data)
+        +sendDirectMessage(data)
+        +typing(data)
+        +getDmHistory(data)
+        +broadcastUserStatus(userId, username, online)
+    }
+
+    class TournamentGateway {
+        -Map~string~ userSockets
+        -Map~string~ clients
+        -Map~string~ nextRoundTimers
+        +tournamentIdentify(data)
+        +joinTournamentRoom(data)
+        +leaveTournamentRoom(data)
+        +setNextRoundTimer(tournamentId, ts)
+        +clearNextRoundTimer(tournamentId)
+        +notifyGameResult(data)
+        +notifyNextRound(data)
+        +notifyTournamentFinished(data)
+    }
+
+    class LeaderboardGateway {
+        -Map~string~ subscribedClients
+        +handleSubscribe(data)
+        +triggerEloUpdate(matchResult)
+        +broadcastUpdate(category, data)
+    }
+
+    %% ──────────────── SERVICES (Business Logic) ────────────────
+    class GameService {
+        -Redis redis
+        -NodePgDatabase db
+        +joinQueue(entry) MatchmakingEntry
+        +createGame(whiteId, blackId, timeControl) GameState
+        +processMove(gameId, userId, move) GameState
+        +getGame(gameId) GameState
+        +saveGameToDb(gameId) void
+        +clearUserCurrentGame(userId) void
+        +getGameHistory(userId) Game[]
+    }
+
+    class AiService {
+        -Logger logger
+        +getBestMove(fen, difficulty, botColor) Move
+        -evaluateBoard(chess) number
+        -minimax(chess, depth, alpha, beta, isMax) number
+        -orderMoves(moves) Move[]
+        -quiescenceSearch(chess, alpha, beta) number
+    }
+
+    class AuthService {
+        -NodePgDatabase db
+        +validateUser(email, password) User
+        +register(data) User
+        +login(data) AuthTokens
+        +refreshToken(token) AuthTokens
+        -generateTokens(user) AuthTokens
+    }
+
+    class ChatService {
+        -NodePgDatabase db
+        -Redis redis
+        +getOrCreateDmRoom(user1Id, user2Id) Room
+        +saveMessage(roomId, senderId, content) Message
+        +getMessageHistory(roomId, limit) Message[]
+        +cacheMessage(roomId, message) void
+    }
+
+    class TournamentService {
+        -NodePgDatabase db
+        -Redis redis
+        -TournamentSwissService swiss
+        -GameService gameService
+        +createTournament(data) Tournament
+        +joinTournament(tournamentId, userId) void
+        +leaveTournament(tournamentId, userId) void
+        +startTournament(tournamentId) void
+        +nextRound(tournamentId) void
+        +finishTournament(tournamentId) void
+        +deleteTournament(tournamentId) void
+        +recordGameResult(gameId, result) void
+    }
+
+    class TournamentSwissService {
+        -NodePgDatabase db
+        +generatePairings(tournamentId, round) SwissPairing[]
+        -buildPlayerList(tournamentId) SwissPlayer[]
+        -pairPlayers(players, pastMatches) SwissPairing[]
+        -calculateTiebreaks(player) number
+    }
+
+    class LeaderboardService {
+        -Redis redis
+        -NodePgDatabase db
+        +updateElo(dto) void
+        +getTopPlayers(category, limit) LeaderboardEntry[]
+        +getPlayerStats(userId, category) PlayerStats
+        -leaderboardKey(category) string
+        -playerDataKey(userId, category) string
+    }
+
+    class UserService {
+        -NodePgDatabase db
+        +getProfile(userId) UserProfile
+        +updateProfile(userId, data) void
+        +sendFriendRequest(fromId, toUsername) void
+        +respondFriendRequest(requestId, accept) void
+        +getFriendList(userId) Friend[]
+    }
+
+    %% ──────────────── CONTROLLERS (REST API) ────────────────
+    class AuthController {
+        +POST /auth/register
+        +POST /auth/login
+        +POST /auth/refresh
+    }
+
+    class GameController {
+        +GET /game/history
+        +GET /game/:id
+    }
+
+    class TournamentController {
+        +GET /tournament
+        +POST /tournament
+        +GET /tournament/:id
+        +POST /tournament/:id/join
+        +POST /tournament/:id/leave
+        +PATCH /tournament/:id/start
+        +PATCH /tournament/:id/next-round
+        +PATCH /tournament/:id/finish
+        +DELETE /tournament/:id
+    }
+
+    class UserController {
+        +GET /user/me
+        +PATCH /user/profile
+        +POST /user/friends/request
+        +PUT /user/friends/respond
+        +GET /user/friends
+    }
+
+    %% ──────────────── DTOS ────────────────
+    class MatchmakingEntry {
+        +string userId
+        +string username
+        +number rating
+        +string timeControl
+        +string socketId
+        +number queuedAt
+    }
+
+    class GameState {
+        +string gameId
+        +string whiteId
+        +string blackId
+        +string fen
+        +string pgn
+        +Move[] moves
+        +number whiteTime
+        +number blackTime
+        +string status
+        +string timeControl
+    }
+
+    class MakeMoveDto {
+        +string from
+        +string to
+        +string? promotion
+    }
+
+    class SwissPairing {
+        +string gameId
+        +string whiteId
+        +string blackId
+        +number round
+        +string type
+    }
+
+    class LeaderboardEntry {
+        +string userId
+        +string username
+        +number elo
+        +number wins
+        +number losses
+        +number draws
+        +string trend
+    }
+
+    %% ──────────────── MODULES ────────────────
+    class RedisModule {
+        +provide REDIS_CLIENT
+    }
+
+    class DrizzleModule {
+        +provide DRIZZLE
+    }
+
+    %% ═══════════════════════════════════════════════════════
+    %% RELATIONSHIPS
+    %% ═══════════════════════════════════════════════════════
+
+    %% Gateway → Service dependencies
+    GameGateway ..> GameService : uses
+    GameGateway ..> LeaderboardGateway : notify ELO
+    GameGateway ..> WatchGateway : broadcast updates
+    GameGateway ..> TournamentGateway : notify result
+    GameGateway ..> AiService : bot moves
+
+    WatchGateway ..> GameService : read game state
+    WatchGateway ..> WatchService : manage spectators
+
+    ChatGateway ..> ChatService : persist messages
+
+    TournamentGateway ..> TournamentService : manage tournament
+
+    LeaderboardGateway ..> LeaderboardService : ELO operations
+
+    %% Service → Service dependencies
+    GameService ..> LeaderboardService : update ELO
+    TournamentService ..> TournamentSwissService : pairings
+    TournamentService ..> GameService : create games
+
+    %% Service → Infrastructure dependencies
+    GameService ..> RedisModule : game state
+    GameService ..> DrizzleModule : persist games
+    AuthService ..> DrizzleModule : user CRUD
+    AuthService ..> RedisModule : token store
+    ChatService ..> DrizzleModule : messages
+    ChatService ..> RedisModule : message cache + online users
+    TournamentService ..> RedisModule : round data
+    TournamentService ..> DrizzleModule : tournament CRUD
+    LeaderboardService ..> RedisModule : ranking (ZSET)
+    LeaderboardService ..> DrizzleModule : persist ELO
+    UserService ..> DrizzleModule : user/profile CRUD
+
+    %% Controller → Service dependencies
+    AuthController ..> AuthService
+    GameController ..> GameService
+    TournamentController ..> TournamentService
+    UserController ..> UserService
+
+    %% DTO usage
+    GameService ..> MatchmakingEntry : queue entries
+    GameService ..> GameState : game management
+    GameService ..> MakeMoveDto : move validation
+    TournamentSwissService ..> SwissPairing : pairings
+    LeaderboardService ..> LeaderboardEntry : rankings
+
+    note for GameGateway "namespace: /chess"
+    note for WatchGateway "namespace: /watch"
+    note for ChatGateway "namespace: /chat"
+    note for TournamentGateway "namespace: /tournament"
+    note for LeaderboardGateway "namespace: /leaderboard"
+```
+
+#### 🔍 Giải thích chi tiết từng thành phần
+
+| Nhóm | Class | Vai trò trong hệ thống |
+|------|-------|------------------------|
+| **🟠 Gateway** (WebSocket) | `GameGateway` | **Cổng giao tiếp chính** qua WebSocket namespace `/chess`. Nhận các event từ client như `join_queue` (tìm trận), `make_move` (đi cờ), `resign` (đầu hàng), `offerDraw` (xin hòa), `startBotGame` (chơi với máy). Sau đó **ủy thác** (delegate) xuống `GameService` để xử lý logic. Ngoài ra còn broadcast kết quả tới `WatchGateway` (khán giả), `LeaderboardGateway` (cập nhật ELO), `TournamentGateway` (nếu là trận giải đấu). |
+| **🟠 Gateway** | `WatchGateway` | Cho phép người dùng **xem trận đấu trực tiếp** (spectator mode) qua namespace `/watch`. Quản lý danh sách khán giả (`spectators`) và broadcast `game_update` mỗi khi có nước đi mới, `game_over` khi trận kết thúc. |
+| **🟠 Gateway** | `ChatGateway` | **Chat 1-1** qua namespace `/chat`. Hỗ trợ 2 luồng: `send_dm` (gửi vào room khi cả 2 đã mở chat) và `send_direct_message` (gửi trực tiếp qua Redis Hash `chess:online_users` khi người nhận chưa mở chat). Có typing indicator và multi-tab support. |
+| **🟠 Gateway** | `TournamentGateway` | **Real-time giải đấu** qua namespace `/tournament`. Quản lý `nextRoundTimers` (countdown 30s giữa các vòng), broadcast `tournament_update` khi có game result, `next_round` khi chuyển vòng, `tournament_finished` khi kết thúc. |
+| **🟠 Gateway** | `LeaderboardGateway` | **Bảng xếp hạng real-time** qua namespace `/leaderboard`. Nhận subscribe từ client, broadcast `leaderboard_update` mỗi khi ELO thay đổi sau trận đấu. |
+| **🔵 Service** | `GameService` | **Trái tim của hệ thống** — xử lý toàn bộ logic game: matchmaking (Redis Lua script atomic), tạo game state, validate nước đi (chess.js), quản lý đồng hồ (server-side clock), lưu game vào PostgreSQL khi kết thúc. |
+| **🔵 Service** | `AiService` | **Engine cờ vua AI** — sử dụng thuật toán **Minimax + Alpha-Beta Pruning** để sinh nước đi cho bot. Hỗ trợ 3 mức độ khó (Easy/Medium/Hard) tương ứng với độ sâu tìm kiếm 1/3/5. Có các tối ưu: MVV-LVA Move Ordering, Piece-Square Tables, Quiescence Search. |
+| **🔵 Service** | `AuthService` | **Xác thực người dùng** — đăng ký (hash password bcrypt), đăng nhập (tạo JWT access token 15 phút + refresh token 7 ngày), refresh token. Token được lưu trong Redis. |
+| **🔵 Service** | `ChatService` | **Quản lý chat** — tạo/lấy private chat room giữa 2 user, lưu tin nhắn vào PostgreSQL, cache 50 tin nhắn gần nhất vào Redis List. |
+| **🔵 Service** | `TournamentService` | **Quản lý giải đấu** — CRUD tournament, join/leave, start/finish, chuyển vòng (next round). Ủy thác việc ghép cặp cho `TournamentSwissService` và tạo game cho `GameService`. |
+| **🔵 Service** | `TournamentSwissService` | **Thuật toán Swiss Pairing** — ghép cặp người chơi trong giải đấu dựa trên điểm số và tiebreaks (Buchholz, Sonneborn-Berger). Vòng 1 ghép ngẫu nhiên/theo rating, các vòng sau ghép theo điểm. |
+| **🔵 Service** | `LeaderboardService` | **Bảng xếp hạng ELO** — cập nhật ELO vào Redis Sorted Set (ranking) + Redis Hash (stats) + PostgreSQL (persist). Hỗ trợ 3 category: Blitz, Bullet, Rapid. |
+| **🔵 Service** | `UserService` | **Quản lý người dùng** — lấy/cập nhật profile, gửi/nhận lời mời kết bạn, quản lý danh sách bạn bè. |
+| **🟢 Controller** (REST API) | `AuthController` | REST endpoints: `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh` |
+| **🟢 Controller** | `GameController` | REST endpoints: `GET /game/history` (lịch sử trận), `GET /game/:id` (chi tiết trận) |
+| **🟢 Controller** | `TournamentController` | REST endpoints: CRUD tournaments, join/leave, start/next-round/finish/delete |
+| **🟢 Controller** | `UserController` | REST endpoints: `GET /user/me`, `PATCH /user/profile`, friends API |
+| **📦 DTO** | `GameState` | **Cấu trúc dữ liệu** lưu trạng thái một ván cờ: `gameId`, `whiteId`, `blackId`, `fen` (thế cờ), `pgn` (lịch sử nước đi), `moves[]`, `whiteTime`/`blackTime` (đồng hồ), `status` |
+| **📦 DTO** | `MatchmakingEntry` | **Cấu trúc dữ liệu** cho một người chơi trong hàng đợi: `userId`, `rating` (ELO), `timeControl`, `socketId` |
+| **📦 DTO** | `SwissPairing` | **Cấu trúc dữ liệu** cho một cặp đấu trong giải: `whiteId`, `blackId`, `round`, `type` |
+| **📦 DTO** | `LeaderboardEntry` | **Cấu trúc dữ liệu** cho một entry trong bảng xếp hạng: `elo`, `wins`, `losses`, `draws`, `trend` |
+
+---
+
+### 2. Module Game — Chi Tiết
+
+Sơ đồ này **phóng to** vào module Game, cho thấy mối quan hệ giữa `GameGateway`, `GameService`, `AiService` và các Gateway khác.
+
+```mermaid
+classDiagram
+    direction TB
+
+    class GameGateway {
+        -Map connectedClients
+        -Map matchmakingTimers
+        +joinQueue(data)
+        +leaveQueue()
+        +makeMove(data)
+        +resign()
+        +offerDraw()
+        +respondDraw(data)
+        +startBotGame(data)
+    }
+
+    class GameService {
+        -Redis redis
+        -NodePgDatabase db
+        +joinQueue(entry)
+        +createGame(white, black, tc)
+        +processMove(gameId, userId, move)
+        +getGame(gameId)
+        +saveGameToDb(gameId)
+        +getGameHistory(userId)
+    }
+
+    class AiService {
+        +getBestMove(fen, diff, color)
+        -minimax(chess, depth, a, b)
+        -evaluateBoard(chess)
+    }
+
+    class WatchGateway {
+        +broadcastGameUpdate(gameId, move)
+        +broadcastGameOver(gameId, result)
+    }
+
+    class LeaderboardGateway {
+        +triggerEloUpdate(matchResult)
+    }
+
+    class TournamentGateway {
+        +notifyGameResult(data)
+    }
+
+    class GameState {
+        +string gameId
+        +string whiteId
+        +string blackId
+        +string fen
+        +string pgn
+        +Move[] moves
+        +number whiteTime
+        +number blackTime
+        +string status
+    }
+
+    class MatchmakingEntry {
+        +string userId
+        +string username
+        +number rating
+        +string timeControl
+        +string socketId
+    }
+
+    GameGateway --> GameService : delegates
+    GameGateway --> AiService : bot moves
+    GameGateway ..> WatchGateway : broadcast
+    GameGateway ..> LeaderboardGateway : ELO
+    GameGateway ..> TournamentGateway : notify
+    GameService --> GameState : creates & manages
+    GameService --> MatchmakingEntry : queue entries
+    GameService --> Redis : MATCHMAKE_LUA
+    GameService --> PostgreSQL : persist games
+```
+
+#### 🔍 Giải thích
+
+- **`GameGateway`** là **cổng vào duy nhất** cho mọi thao tác game. Nó KHÔNG tự xử lý logic mà **ủy thác** (delegates) cho `GameService`.
+- **`GameService`** là **não bộ** — chạy Lua script atomic trong Redis để ghép trận, validate nước đi bằng chess.js, quản lý đồng hồ server-side. Nó tạo ra đối tượng `GameState` và quản lý vòng đời của game.
+- **`AiService`** được gọi khi người chơi chọn chơi với bot — `GameGateway` gọi trực tiếp `AiService.getBestMove()`.
+- **`WatchGateway`** nhận broadcast từ `GameGateway` mỗi khi có nước đi mới để cập nhật cho khán giả.
+- **`LeaderboardGateway`** nhận thông báo khi game kết thúc để cập nhật ELO.
+- **`TournamentGateway`** nhận thông báo nếu game thuộc về một giải đấu.
+- **`GameState`** là cấu trúc dữ liệu lưu trong Redis (Hash) — mỗi game active có một `GameState`.
+
+---
+
+### 3. Module Tournament — Chi Tiết
+
+```mermaid
+classDiagram
+    direction TB
+
+    class TournamentGateway {
+        -Map userSockets
+        -Map clients
+        -Map nextRoundTimers
+        +tournamentIdentify(data)
+        +joinTournamentRoom(data)
+        +notifyGameResult(data)
+        +notifyNextRound(data)
+        +notifyTournamentFinished(data)
+        +setNextRoundTimer(tId, ts)
+    }
+
+    class TournamentService {
+        -NodePgDatabase db
+        -Redis redis
+        -TournamentSwissService swiss
+        -GameService gameService
+        +createTournament(data)
+        +joinTournament(tId, userId)
+        +leaveTournament(tId, userId)
+        +startTournament(tId)
+        +nextRound(tId)
+        +finishTournament(tId)
+        +deleteTournament(tId)
+        +recordGameResult(gameId, result)
+    }
+
+    class TournamentSwissService {
+        -NodePgDatabase db
+        +generatePairings(tId, round)
+        -buildPlayerList(tId)
+        -pairPlayers(players, pastMatches)
+        -calculateTiebreaks(player)
+    }
+
+    class GameService {
+        +createGame(white, black, tc)
+    }
+
+    class TournamentController {
+        +GET /tournament
+        +POST /tournament
+        +GET /tournament/:id
+        +POST /tournament/:id/join
+        +POST /tournament/:id/leave
+        +PATCH /tournament/:id/start
+        +PATCH /tournament/:id/next-round
+        +PATCH /tournament/:id/finish
+        +DELETE /tournament/:id
+    }
+
+    class TournamentRound {
+        +string tournamentId
+        +number round
+        +TournamentGame[] games
+        +string status
+    }
+
+    class TournamentGame {
+        +string gameId
+        +string whiteId
+        +string blackId
+        +number round
+        +string status
+        +string? result
+    }
+
+    class SwissPairing {
+        +string gameId
+        +string whiteId
+        +string blackId
+        +number round
+        +string type
+    }
+
+    class SwissPlayer {
+        +string userId
+        +number tournamentPoints
+        +number rating
+        +number whitesPlayed
+        +number blacksPlayed
+        +string[] colorHistory
+        +boolean hadBye
+    }
+
+    TournamentGateway --> TournamentService : delegates
+    TournamentService --> TournamentSwissService : pairing logic
+    TournamentService --> GameService : create tournament games
+    TournamentController --> TournamentService : REST API
+    TournamentSwissService --> SwissPairing : generates
+    TournamentSwissService --> SwissPlayer : evaluates
+    TournamentService --> TournamentRound : manages
+    TournamentRound --> TournamentGame : contains
+
+    TournamentGateway --> Redis : round data
+    TournamentService --> PostgreSQL : tournament CRUD
+```
+
+#### 🔍 Giải thích
+
+- **`TournamentGateway`** là cổng WebSocket (`/tournament`) — nhận event từ client và broadcast real-time updates.
+- **`TournamentService`** là **điều phối viên** của giải đấu — quản lý toàn bộ vòng đời: tạo, join/leave, start, next round, finish, delete. Nó gọi `TournamentSwissService` để ghép cặp và `GameService` để tạo các trận đấu.
+- **`TournamentSwissService`** chứa **thuật toán Swiss Pairing** — ghép cặp người chơi dựa trên điểm số. Các phương thức private (`-`) như `buildPlayerList`, `pairPlayers`, `calculateTiebreaks` là chi tiết nội bộ của thuật toán.
+- **`TournamentController`** cung cấp REST API cho CRUD giải đấu.
+- **`TournamentRound`** và **`TournamentGame`** là các cấu trúc dữ liệu lưu trong Redis (String JSON) cho mỗi vòng đấu.
+- **`SwissPlayer`** lưu thông tin người chơi trong giải: điểm (`tournamentPoints`), rating, lịch sử màu quân (`colorHistory`), đã được bye chưa.
+
+---
+
+### 4. Module Chat — Chi Tiết
+
+```mermaid
+classDiagram
+    direction TB
+
+    class ChatGateway {
+        -Map clients
+        -Map userSockets
+        -Redis redis
+        +identify(data)
+        +joinDm(data)
+        +sendDm(data)
+        +sendDirectMessage(data)
+        +typing(data)
+        +getDmHistory(data)
+        +broadcastUserStatus(userId, username, online)
+    }
+
+    class ChatService {
+        -NodePgDatabase db
+        -Redis redis
+        +getOrCreateDmRoom(u1, u2)
+        +saveMessage(roomId, senderId, content)
+        +getMessageHistory(roomId, limit)
+        +cacheMessage(roomId, message)
+    }
+
+    class ChatRoom {
+        +string id
+        +string type
+        +string referenceId
+    }
+
+    class Message {
+        +string id
+        +string roomId
+        +string senderId
+        +string senderUsername
+        +string content
+        +Date createdAt
+    }
+
+    ChatGateway --> ChatService : delegates
+    ChatGateway --> Redis : online_users Hash
+    ChatService --> ChatRoom : manages
+    ChatService --> Message : persists
+    ChatService --> PostgreSQL : chat_rooms, messages
+    ChatGateway --> Redis : message cache (List)
+```
+
+#### 🔍 Giải thích
+
+- **`ChatGateway`** vừa là WebSocket gateway (`/chat`), vừa **tương tác trực tiếp với Redis** (không qua Service) cho 2 việc: đọc/ghi `chess:online_users` Hash (theo dõi ai đang online) và đọc/ghi message cache List.
+- **`ChatService`** lo việc **lưu trữ bền vững**: tạo phòng chat (`ChatRoom`), lưu tin nhắn (`Message`) vào PostgreSQL, cache 50 tin nhắn gần nhất.
+- **2 luồng gửi tin nhắn**: `sendDm()` gửi qua Socket.IO room (khi cả 2 đã join room), `sendDirectMessage()` gửi trực tiếp tới socket của người nhận (dùng `userSockets` map được duy trì qua Redis Hash).
+- **`ChatRoom`** và **`Message`** là các entity tương ứng với bảng `chat_rooms` và `messages` trong PostgreSQL.
+
+---
+
+### 5. Module Auth & User — Chi Tiết
+
+```mermaid
+classDiagram
+    direction TB
+
+    class AuthController {
+        +POST /auth/register
+        +POST /auth/login
+        +POST /auth/refresh
+    }
+
+    class AuthService {
+        -NodePgDatabase db
+        +register(data) User
+        +login(email, password) AuthTokens
+        +validateUser(email, password) User
+        +refreshToken(token) AuthTokens
+        -generateTokens(user) AuthTokens
+        -hashPassword(pw) string
+        -comparePassword(pw, hash) boolean
+    }
+
+    class UserController {
+        +GET /user/me
+        +PATCH /user/profile
+        +POST /user/friends/request
+        +PUT /user/friends/respond
+        +GET /user/friends
+    }
+
+    class UserService {
+        -NodePgDatabase db
+        +getProfile(userId)
+        +updateProfile(userId, data)
+        +sendFriendRequest(fromId, toUsername)
+        +respondFriendRequest(reqId, accept)
+        +getFriendList(userId)
+    }
+
+    class JwtAuthGuard {
+        +canActivate(context)
+        +validateToken(token)
+    }
+
+    class WsAuthGuard {
+        +canActivate(context)
+        +extractToken(client)
+    }
+
+    class User {
+        +string id
+        +string username
+        +string email
+        +string passwordHash
+        +number blitzRating
+        +number rapidRating
+        +number bulletRating
+        +string role
+    }
+
+    class AuthTokens {
+        +string accessToken
+        +string refreshToken
+        +number expiresIn
+    }
+
+    AuthController --> AuthService : delegates
+    UserController --> UserService : delegates
+    AuthService --> User : manages
+    AuthService --> AuthTokens : generates
+    AuthService --> PostgreSQL : users table
+    AuthService --> Redis : token store
+    UserService --> PostgreSQL : users, profile_info, friends
+    JwtAuthGuard --> AuthService : token validation
+    WsAuthGuard --> AuthService : WebSocket auth
+```
+
+#### 🔍 Giải thích
+
+- **`AuthController`** + **`AuthService`** = hệ thống đăng nhập/đăng ký. `AuthService` có các phương thức private `-hashPassword` và `-comparePassword` (không lộ ra ngoài).
+- **`UserController`** + **`UserService`** = quản lý profile và bạn bè.
+- **`User`** là entity chính — ánh xạ vào bảng `users`. Chứa 3 loại ELO: `blitzRating`, `rapidRating`, `bulletRating`.
+- **`AuthTokens`** là DTO chứa `accessToken` (15 phút) và `refreshToken` (7 ngày).
+- **`JwtAuthGuard`** bảo vệ REST API endpoints — kiểm tra JWT token trong header.
+- **`WsAuthGuard`** bảo vệ WebSocket events — kiểm tra token khi client connect.
+- Cả 2 Guard đều phụ thuộc vào `AuthService` để validate token.
+
+---
+
+### 6. Module Leaderboard — Chi Tiết
+
+```mermaid
+classDiagram
+    direction TB
+
+    class LeaderboardGateway {
+        -Map subscribedClients
+        +handleSubscribe(data)
+        +triggerEloUpdate(matchResult)
+        +broadcastUpdate(category, data)
+    }
+
+    class LeaderboardService {
+        -Redis redis
+        -NodePgDatabase db
+        +updateElo(dto)
+        +getTopPlayers(category, limit)
+        +getPlayerStats(userId, category)
+        +seedDemoData()
+    }
+
+    class LeaderboardEntry {
+        +string userId
+        +string username
+        +number elo
+        +number wins
+        +number losses
+        +number draws
+        +number gamesPlayed
+        +number eloChange
+        +string trend
+    }
+
+    class UpdateEloDto {
+        +string userId
+        +string username
+        +string category
+        +number newElo
+        +number eloDelta
+        +number wins
+        +number losses
+        +number draws
+    }
+
+    LeaderboardGateway --> LeaderboardService : delegates
+    LeaderboardService --> LeaderboardEntry : produces
+    LeaderboardService --> UpdateEloDto : consumes
+    LeaderboardService --> Redis : Sorted Set (ranking) + Hash (player stats)
+    LeaderboardService --> PostgreSQL : persist ELO to users table
+```
+
+#### 🔍 Giải thích
+
+- **`LeaderboardGateway`** là WebSocket gateway (`/leaderboard`) — nhận subscribe từ client, broadcast cập nhật khi ELO thay đổi.
+- **`LeaderboardService`** sử dụng **Redis Sorted Set** để xếp hạng (ZADD/ZREVRANGE) — O(log N) update, rất nhanh. Ngoài ra còn dùng Redis Hash để lưu stats chi tiết (wins/losses/draws/gamesPlayed/trend).
+- **`LeaderboardEntry`** là DTO trả về cho client — chứa đầy đủ thông tin một dòng trong bảng xếp hạng.
+- **`UpdateEloDto`** là DTO đầu vào — nhận từ `GameGateway` sau mỗi trận đấu.
+- ELO được **persist vào PostgreSQL** (`users` table) để không bị mất khi Redis restart.
+
+---
+
+### 7. Frontend Class Diagram — Kiến Trúc Tổng Quan
+
+Sơ đồ này thể hiện **toàn bộ cấu trúc frontend** — từ Zustand Stores (quản lý state), Custom Hooks (giao tiếp WebSocket), đến UI Components (giao diện).
+
+```mermaid
+classDiagram
+    direction TB
+
+    %% ──────────────── ZUSTAND STORES ────────────────
+    class UserStore {
+        +User user
+        +boolean isAuthenticated
+        +login(email, password)
+        +register(data)
+        +logout()
+        +fetchProfile()
+        +updateLocalElo(newElo)
+    }
+
+    class GameStore {
+        +GameState currentGame
+        +boolean isSearching
+        +number searchTime
+        +GameOverResult gameOver
+        +setGame(game)
+        +updateMove(move)
+        +setGameOver(result)
+        +setSearching(bool)
+        +reset()
+    }
+
+    class TournamentStore {
+        +Tournament[] tournaments
+        +Tournament currentTournament
+        +SwissPairing[] myPairings
+        +number currentRound
+        +number countdownSeconds
+        +fetchTournaments()
+        +setCurrentTournament(t)
+        +setPairings(pairings)
+        +startCountdown(ms)
+        +clearCountdown()
+    }
+
+    class ChatStore {
+        +Map~string, ChatRoom~ rooms
+        +number totalUnread
+        +string activeRoomId
+        +upsertRoomForDirect(msg)
+        +addMessage(roomId, msg)
+        +setActiveRoom(roomId)
+        +markRead(roomId)
+        +setTyping(roomId, userId, bool)
+    }
+
+    class FriendStore {
+        +Friend[] friendList
+        +FriendRequest[] pendingRequests
+        +fetchFriends()
+        +sendRequest(username)
+        +respondRequest(reqId, accept)
+    }
+
+    class ProfileStore {
+        +UserProfile profile
+        +PlayerStats stats
+        +fetchProfile()
+        +updateProfile(data)
+    }
+
+    %% ──────────────── CUSTOM HOOKS ────────────────
+    class UseChessSocket {
+        -Socket socket
+        -GameStore gameStore
+        -UserStore userStore
+        +connect()
+        +disconnect()
+        +joinQueue(timeControl)
+        +makeMove(from, to, promotion)
+        +resign()
+        +offerDraw()
+        +respondDraw(accept)
+        +startBotGame(difficulty, color)
+        -onGameStarted(data)
+        -onMoveMade(data)
+        -onGameOver(data)
+        -onSearchProgress(data)
+    }
+
+    class UseFriendChat {
+        -Socket socket
+        -ChatStore chatStore
+        +connect(userId)
+        +sendMessage(roomId, content)
+        +sendDirectMessage(toUserId, content)
+        +joinDm(friendId)
+        +sendTyping(roomId)
+        -onDmMessage(data)
+        -onReceiveDirectMessage(data)
+        -onUserTyping(data)
+        -onUserStatus(data)
+    }
+
+    class UseWatchSocket {
+        -Socket socket
+        -WatchStore watchStore
+        +connect()
+        +watchGame(gameId)
+        +leaveWatch()
+        -onGameState(data)
+        -onGameUpdate(data)
+    }
+
+    class UseLeaderboard {
+        -Socket socket
+        +subscribe(category)
+        +unsubscribe()
+        -onLeaderboardData(data)
+        -onLeaderboardUpdate(data)
+    }
+
+    class UseStockfish {
+        -Worker stockfish
+        +load()
+        +getBestMove(fen, difficulty)
+        +terminate()
+    }
+
+    %% ──────────────── UI COMPONENTS ────────────────
+    class ChessBoard {
+        +render()
+        +onPieceDrop(source, target)
+        +highlightLegalMoves(square)
+        +flipBoard()
+        +showPromotionDialog(callback)
+    }
+
+    class ChatDrawer {
+        +render()
+        +selectRoom(roomId)
+        +sendMessage(content)
+        +showTypingIndicator()
+        +showUnreadBadge(count)
+    }
+
+    class GameOverModal {
+        +render(result, eloChange)
+        +showWinner(winner)
+        +showEloChange(delta, oldElo, newElo)
+        +actionButtons(rematch, newGame)
+    }
+
+    class TournamentBracket {
+        +render(pairings)
+        +showStandings(players)
+        +showCountdown(seconds)
+    }
+
+    class MatchmakingPanel {
+        +render()
+        +selectTimeControl(tc)
+        +showSearchingAnimation()
+        +showEloRange(eloRange)
+        +cancelSearch()
+    }
+
+    class LiveGamesList {
+        +render(games)
+        +selectGame(gameId)
+        +showPlayerInfo(players)
+    }
+
+    class LeaderboardTable {
+        +render(entries)
+        +sortByCategory(category)
+        +showTrendIcon(trend)
+    }
+
+    class ProfilePage {
+        +render(profile, stats)
+        +editAvatar()
+        +editBio()
+        +showEloChart()
+    }
+
+    %% ──────────────── LIB ────────────────
+    class ApiFetch {
+        +get(url, params)
+        +post(url, data)
+        +patch(url, data)
+        +delete(url)
+        +setAuthToken(token)
+    }
+
+    class AuthUtils {
+        +getToken()
+        +setToken(token)
+        +removeToken()
+        +isTokenExpired(token)
+        +decodeToken(token)
+    }
+
+    class ChessUtils {
+        +getLegalMoves(fen, square)
+        +isCheck(fen)
+        +isCheckmate(fen)
+        +isStalemate(fen)
+        +getGameResult(fen)
+    }
+
+    %% ═══════════════════════════════════════════════════════
+    %% RELATIONSHIPS
+    %% ═══════════════════════════════════════════════════════
+
+    UseChessSocket --> GameStore : updates
+    UseChessSocket --> UserStore : reads/auth
+    UseFriendChat --> ChatStore : updates
+    UseWatchSocket --> WatchStore : updates
+    UseLeaderboard --> LeaderboardTable : data binding
+
+    ChessBoard --> UseChessSocket : emits moves
+    ChessBoard --> ChessUtils : validation
+
+    ChatDrawer --> UseFriendChat : emits messages
+    ChatDrawer --> ChatStore : reads
+
+    GameOverModal --> GameStore : reads result
+    TournamentBracket --> TournamentStore : reads pairings
+    MatchmakingPanel --> UseChessSocket : emits queue
+    LiveGamesList --> UseWatchSocket : emits watch
+    LeaderboardTable --> UseLeaderboard : subscribes
+    ProfilePage --> ProfileStore : reads/writes
+
+    UseStockfish --> ChessBoard : AI moves
+
+    ApiFetch ..> AuthUtils : token management
+
+    note for UseChessSocket "namespace: /chess"
+    note for UseFriendChat "namespace: /chat"
+    note for UseWatchSocket "namespace: /watch"
+    note for UseLeaderboard "namespace: /leaderboard"
+```
+
+#### 🔍 Giải thích chi tiết từng thành phần
+
+**🏪 Zustand Stores (Quản lý State)**
+
+| Store | Vai trò |
+|-------|---------|
+| **`UserStore`** | Lưu thông tin user hiện tại (`user`, `isAuthenticated`). Xử lý login, register, logout, fetch profile. Có `updateLocalElo()` để cập nhật ELO mới vào localStorage ngay sau khi game kết thúc. |
+| **`GameStore`** | Lưu trạng thái game hiện tại: `currentGame` (GameState), `isSearching` (đang tìm trận?), `searchTime` (thời gian đã chờ), `gameOver` (kết quả khi kết thúc). |
+| **`TournamentStore`** | Lưu danh sách giải đấu, giải đấu hiện tại, pairings của người chơi, `countdownSeconds` (đếm ngược 30s giữa các vòng). |
+| **`ChatStore`** | Quản lý tất cả phòng chat (`rooms`), tổng số tin nhắn chưa đọc (`totalUnread`), phòng đang mở (`activeRoomId`). `upsertRoomForDirect()` cho phép hiển thị badge Unread ngay cả khi chưa mở cửa sổ chat. |
+| **`FriendStore`** | Danh sách bạn bè và lời mời kết bạn đang chờ. |
+| **`ProfileStore`** | Thông tin profile và stats (wins/losses/draws) của user. |
+
+**🪝 Custom Hooks (Giao tiếp WebSocket)**
+
+| Hook | Namespace | Vai trò |
+|------|-----------|---------|
+| **`UseChessSocket`** | `/chess` | Kết nối WebSocket tới GameGateway. Các method public (`+`) là action người dùng gọi (joinQueue, makeMove, resign...). Các method private (`-`) là handler lắng nghe event từ server (onGameStarted, onMoveMade, onGameOver...). |
+| **`UseFriendChat`** | `/chat` | Kết nối WebSocket tới ChatGateway. Gửi tin nhắn (sendMessage/sendDirectMessage), join phòng chat, gửi typing indicator. |
+| **`UseWatchSocket`** | `/watch` | Kết nối WebSocket tới WatchGateway. Xem trận đấu trực tiếp. |
+| **`UseLeaderboard`** | `/leaderboard` | Kết nối WebSocket tới LeaderboardGateway. Nhận real-time ranking updates. |
+| **`UseStockfish`** | (local) | Chạy Stockfish engine trong Web Worker trên browser — không cần backend call cho AI moves. |
+
+**🧩 UI Components**
+
+| Component | Vai trò |
+|-----------|---------|
+| **`ChessBoard`** | Bàn cờ tương tác — kéo thả quân, highlight nước đi hợp lệ, lật bàn cờ, dialog phong cấp. Gọi `UseChessSocket.makeMove()` khi người dùng thả quân. Dùng `ChessUtils` để validate phía client. |
+| **`ChatDrawer`** | Khung chat trượt từ bên phải — chọn bạn để chat, gửi tin nhắn, hiển thị typing indicator và badge Unread. |
+| **`GameOverModal`** | Popup hiển thị khi game kết thúc — kết quả (thắng/thua/hòa), thay đổi ELO (+X/-Y), icon (🏆/💔/🤝), glow effect. |
+| **`TournamentBracket`** | Hiển thị cặp đấu trong giải đấu, bảng xếp hạng, đồng hồ countdown. |
+| **`MatchmakingPanel`** | Giao diện tìm trận — chọn time control, animation "Đang tìm...", hiển thị phạm vi ELO đang tìm, nút hủy. |
+| **`LiveGamesList`** | Danh sách các trận đang diễn ra — click để vào xem (spectator mode). |
+| **`LeaderboardTable`** | Bảng xếp hạng — sắp xếp theo category (Blitz/Bullet/Rapid), hiển thị trend (↑↓→). |
+| **`ProfilePage`** | Trang hồ sơ cá nhân — avatar, bio, biểu đồ ELO. |
+
+**📚 Lib (Thư viện)**
+
+| Lib | Vai trò |
+|-----|---------|
+| **`ApiFetch`** | Wrapper cho HTTP requests — tự động gắn JWT token vào header, xử lý refresh token khi hết hạn. |
+| **`AuthUtils`** | Quản lý JWT token trong localStorage — lấy/lưu/xóa token, kiểm tra hết hạn, decode payload. |
+| **`ChessUtils`** | Wrapper cho chess.js — lấy nước đi hợp lệ, kiểm tra chiếu/chiếu hết/hòa. Dùng cho client-side validation (UX only). |
+
+---
+
+### 8. Package/Subsystem Diagram — Kiến Trúc Phân Tầng
+
+Sơ đồ này cho thấy **toàn bộ hệ thống được tổ chức thành các tầng** (layers) — từ Frontend, qua WebSocket/REST, tới Backend và Data Layer.
+
+```mermaid
+graph TB
+    subgraph "🎨 FRONTEND — Next.js 16 (React 19)"
+        direction TB
+
+        subgraph "Presentation Layer"
+            PAGES["📄 Pages<br/>(App Router)"]
+            COMPONENTS["🧩 Components<br/>ChessBoard, ChatDrawer,<br/>GameOverModal, TournamentBracket"]
+        end
+
+        subgraph "State Management"
+            STORES["🏪 Zustand Stores<br/>UserStore, GameStore,<br/>ChatStore, TournamentStore"]
+        end
+
+        subgraph "Communication Layer"
+            HOOKS["🪝 Custom Hooks<br/>useChessSocket, useFriendChat,<br/>useWatchSocket, useLeaderboard,<br/>useStockfish"]
+            LIB["📚 Lib<br/>apiFetch, authUtils, chessUtils"]
+        end
+
+        PAGES --> COMPONENTS
+        COMPONENTS --> HOOKS
+        COMPONENTS --> STORES
+        HOOKS --> STORES
+        HOOKS --> LIB
+    end
+
+    subgraph "🔌 REAL-TIME COMMUNICATION"
+        SOCKET_IO["Socket.IO<br/>━━━━━━━━━━━━━━━━<br/>Namespaces:<br/> /chess · /chat<br/> /watch · /tournament<br/> /leaderboard"]
+    end
+
+    subgraph "⚙️ BACKEND — NestJS"
+        direction TB
+
+        subgraph "Gateway Layer (WebSocket)"
+            GAME_GW["🎮 GameGateway<br/>matchmaking, moves, resign"]
+            WATCH_GW["👁️ WatchGateway<br/>spectator mode"]
+            CHAT_GW["💬 ChatGateway<br/>DM 1-1, typing"]
+            TOURN_GW["🏆 TournamentGateway<br/>rounds, standings"]
+            LB_GW["📊 LeaderboardGateway<br/>ELO updates"]
+        end
+
+        subgraph "Controller Layer (REST)"
+            AUTH_CTRL["🔐 AuthController<br/>register, login, refresh"]
+            GAME_CTRL["🎮 GameController<br/>history, detail"]
+            TOURN_CTRL["🏆 TournamentController<br/>CRUD, join/leave"]
+            USER_CTRL["👤 UserController<br/>profile, friends"]
+        end
+
+        subgraph "Service Layer (Business Logic)"
+            GAME_SVC["🎮 GameService<br/>ELO matchmaking,<br/>move validation, clock"]
+            AI_SVC["🤖 AiService<br/>Minimax + Alpha-Beta<br/>Piece-Square Tables"]
+            AUTH_SVC["🔐 AuthService<br/>JWT, bcrypt"]
+            CHAT_SVC["💬 ChatService<br/>DM rooms, messages"]
+            TOURN_SVC["🏆 TournamentService<br/>round management"]
+            SWISS_SVC["📐 TournamentSwissService<br/>Swiss pairing algorithm"]
+            LB_SVC["📊 LeaderboardService<br/>ELO ranking, stats"]
+            USER_SVC["👤 UserService<br/>profile, friends"]
+        end
+
+        GAME_GW --> GAME_SVC
+        WATCH_GW --> GAME_SVC
+        CHAT_GW --> CHAT_SVC
+        TOURN_GW --> TOURN_SVC
+        LB_GW --> LB_SVC
+
+        AUTH_CTRL --> AUTH_SVC
+        GAME_CTRL --> GAME_SVC
+        TOURN_CTRL --> TOURN_SVC
+        USER_CTRL --> USER_SVC
+
+        GAME_SVC --> AI_SVC
+        GAME_SVC --> LB_SVC
+        TOURN_SVC --> SWISS_SVC
+        TOURN_SVC --> GAME_SVC
+    end
+
+    subgraph "💾 DATA LAYER"
+        direction LR
+
+        subgraph "Cache / Real-time State"
+            REDIS[( "🧠 Redis<br/>━━━━━━━━━━<br/>Game State (Hash)<br/>Matchmaking Queue (ZSET)<br/>Leaderboard (ZSET)<br/>Online Users (Hash)<br/>Message Cache (List)<br/>Tournament Rounds (Hash)" )]
+        end
+
+        subgraph "Persistent Storage"
+            POSTGRES[( "🐘 PostgreSQL<br/>━━━━━━━━━━<br/>users, games<br/>tournaments, participants<br/>chat_rooms, messages<br/>friends, profile_info" )]
+        end
+    end
+
+    subgraph "🌐 EXTERNAL"
+        STOCKFISH["♟️ Stockfish<br/>Chess Engine<br/>(Minimax AI)"]
+    end
+
+    %% Connections
+    FRONTEND <==>|"WebSocket<br/>Socket.IO"| SOCKET_IO
+    FRONTEND -->|"HTTP REST"| BACKEND
+    SOCKET_IO <==> BACKEND
+
+    BACKEND --> REDIS
+    BACKEND --> POSTGRES
+    AI_SVC --> STOCKFISH
+
+    style FRONTEND fill:#e3f2fd,stroke:#1565c0
+    style BACKEND fill:#fff3e0,stroke:#ef6c00
+    style REDIS fill:#ffebee,stroke:#c62828
+    style POSTGRES fill:#e8f5e9,stroke:#2e7d32
+    style SOCKET_IO fill:#f3e5f5,stroke:#7b1fa2
+    style STOCKFISH fill:#fce4ec,stroke:#c2185b
+```
+
+#### 🔍 Giải thích kiến trúc phân tầng
+
+Hệ thống được chia thành **4 tầng chính**:
+
+| Tầng | Màu | Mô tả |
+|------|------|-------|
+| **🎨 Frontend** | Xanh dương | Next.js 16 + React 19. Gồm 3 sub-layer: **Pages** (App Router — định tuyến), **Components** (UI — bàn cờ, chat, modal...), và **Communication Layer** (Hooks + Lib — gọi WebSocket và REST API). |
+| **🔌 Socket.IO** | Tím | Lớp **giao tiếp thời gian thực** trung gian giữa Frontend và Backend. 5 namespace: `/chess`, `/chat`, `/watch`, `/tournament`, `/leaderboard`. |
+| **⚙️ Backend** | Cam | NestJS với 3 sub-layer: **Gateway Layer** (WebSocket — nhận real-time events), **Controller Layer** (REST API — CRUD), **Service Layer** (Business Logic — xử lý nghiệp vụ). |
+| **💾 Data Layer** | Đỏ + Xanh lá | **Redis** (cache + real-time state: game state, queue, leaderboard, online users) và **PostgreSQL** (persistent storage: users, games, tournaments, chat). |
+
+**Luồng dữ liệu điển hình**:
+1. Người dùng tương tác với **Component** (VD: kéo thả quân cờ trên `ChessBoard`)
+2. Component gọi **Hook** (VD: `UseChessSocket.makeMove()`)
+3. Hook emit event qua **Socket.IO** tới **Gateway** (VD: `GameGateway`)
+4. Gateway ủy thác cho **Service** xử lý (VD: `GameService.processMove()`)
+5. Service đọc/ghi vào **Redis** (real-time state) và **PostgreSQL** (persist)
+
+---
+
+### Bảng Mapping: Class Diagram ↔ Sequence Diagram
+
+| Class | Vai trò | Sequence Diagram liên quan |
+|-------|---------|---------------------------|
+| **GameGateway** | WebSocket `/chess` | UC-G01 (Matchmaking), UC-G02 (Đi cờ), UC-G03 (Đầu hàng), UC-G04 (Hòa), UC-G05 (Timeout), UC-B01 (Play Bot) |
+| **GameService** | Business logic game | Tất cả UC-Gxx và UC-B01 |
+| **AiService** | AI engine | UC-B01 (Play Bot) |
+| **WatchGateway** | WebSocket `/watch` | UC-W01 (Spectator) |
+| **ChatGateway** | WebSocket `/chat` | UC-C01 (Room-based), UC-C02 (Direct/Redis-based), UC-C03 (In-game chat) |
+| **ChatService** | Chat business logic | UC-C01, UC-C02, UC-C03 |
+| **TournamentGateway** | WebSocket `/tournament` | UC-T02 (Join), UC-T03 (Start), UC-T04 (Play), UC-T05 (Countdown), UC-T06 (Finish) |
+| **TournamentService** | Tournament business logic | Tất cả UC-Txx |
+| **TournamentSwissService** | Swiss pairing | UC-T01, UC-T03, UC-T05 |
+| **LeaderboardGateway** | WebSocket `/leaderboard` | UC-L01 (Xem BXH) |
+| **LeaderboardService** | ELO ranking | UC-L01, UC-16 (Tính ELO) |
+| **AuthController** | REST API auth | UC-A01 (Register), UC-A02 (Login), UC-A03 (Refresh) |
+| **AuthService** | JWT, bcrypt | UC-A01, UC-A02, UC-A03 |
+| **UserController** | REST API user | UC-14 (Profile), UC-15 (Friends) |
+| **UserService** | Profile & friends | UC-14, UC-15 |
+| **GameController** | REST API game history | UC-08 (Lịch sử trận) |
+| **TournamentController** | REST API tournament | UC-09, UC-10 |
+
+---
+
 ## Cấu Trúc Codebase
 
 ```
