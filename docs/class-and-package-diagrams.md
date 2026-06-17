@@ -24,32 +24,21 @@
 
 ## 1. Backend Class Diagram — Tổng quan
 
-### 1.1 Toàn bộ class backend (với Multiplicity)
+### 1.1 Backend Class Diagram — Gateways & Services
 
-Sơ đồ dưới đây thể hiện **tất cả các class chính** trong backend NestJS, kèm **quan hệ multiplicity** (số lượng) giữa các class.
+Sơ đồ **tinh gọn** chỉ thể hiện quan hệ giữa **Gateways (WebSocket)** và **Services (Business Logic)**.  
+Controllers, Redis, PostgreSQL, DTOs đã được lược bỏ để tập trung vào kiến trúc cốt lõi.
 
-**Ký hiệu multiplicity trong UML:**
-| Ký hiệu | Ý nghĩa |
-|---------|---------|
-| `"1"` | Đúng 1 |
-| `"0..1"` | 0 hoặc 1 |
-| `"0..*"` | 0 hoặc nhiều |
-| `"1..*"` | 1 hoặc nhiều |
-| `"*"` | Nhiều |
+> 📘 **Giải thích ký hiệu mũi tên**: Xem [UML Relationship Arrows — Toàn Tập](uml-relationship-arrows.md)
 
 ```mermaid
 classDiagram
     direction TB
 
     %% ═══════════════════════════════════════════════════════
-    %% GATEWAYS (WebSocket) — tên method ĐÚNG theo source code
+    %% GATEWAYS (WebSocket)
     %% ═══════════════════════════════════════════════════════
     class GameGateway {
-        -Map connectedClients
-        -Map reMatchIntervals
-        +handleConnection(client)
-        +handleDisconnect(client)
-        +handleReconnectCheck(data)
         +handleFindGame(data)
         +handleCancelSearch(data)
         +handleMakeMove(data)
@@ -60,20 +49,9 @@ classDiagram
         +handleStartBotGame(data)
         +handleJoinGame(data)
         +handleClaimTimeout(data)
-        +handleSendMessage(data)
-        +handleAnalyzePosition(data)
-        -createGameFromMatch(p1, p2, tc)
-        -handleGameOver(gameId, game)
-        -triggerBotMove(gameId)
-        -triggerLeaderboardUpdate(game)
     }
 
     class WatchGateway {
-        -Map spectators
-        -WatchService watchService
-        -GameService gameService
-        +handleConnection(client)
-        +handleDisconnect(client)
         +handleWatchGame(data)
         +handleLeaveWatch(data)
         +broadcastGameUpdate(gameId, move)
@@ -81,41 +59,23 @@ classDiagram
     }
 
     class ChatGateway {
-        -Map clients
-        -Map userSockets
-        -Redis redis
-        -ChatService chatService
-        +handleConnection(client)
-        +handleDisconnect(client)
         +handleIdentify(data)
         +handleJoinDm(data)
         +handleSendDm(data)
         +handleSendDirectMessage(data)
         +handleGetHistory(data)
         +handleTyping(data)
-        -broadcastUserStatus(userId, username, isOnline)
     }
 
     class TournamentGateway {
-        -Map userSockets
-        -Map clients
-        -Map nextRoundTimers
-        +handleConnection(client)
-        +handleDisconnect(client)
         +handleIdentify(data)
         +handleJoinRoom(data)
         +handleLeaveRoom(data)
         +broadcastTournamentUpdate(tournamentId, data)
         +notifyPlayer(userId, event, data)
-        +setNextRoundTimer(tournamentId, ts)
-        +clearNextRoundTimer(tournamentId)
     }
 
     class LeaderboardGateway {
-        -Map subscribedClients
-        -LeaderboardService leaderboardService
-        +handleConnection(client)
-        +handleDisconnect(client)
         +handleSubscribe(data)
         +handleUnsubscribe(data)
         +handleRequest(data)
@@ -124,58 +84,34 @@ classDiagram
     }
 
     %% ═══════════════════════════════════════════════════════
-    %% SERVICES (Business Logic) — tên method ĐÚNG
+    %% SERVICES (Business Logic)
     %% ═══════════════════════════════════════════════════════
     class GameService {
-        -Redis redisClient
-        -NodePgDatabase db
         +joinQueue(entry, maxEloDiff) MatchmakingEntry
         +leaveQueue(userId, timeControl) void
-        +getQueueSize(timeControl) number
-        +getQueueEntries(timeControl) MatchmakingEntry[]
-        +reMatchWaitingPlayers(timeControl) Match[]
         +createGameState(gameId, white, black, tc) GameState
         +processMove(gameId, userId, move) MoveResult
         +resign(gameId, userId) GameState
         +offerDraw(gameId, userId) boolean
         +acceptDraw(gameId) GameState
         +getGame(gameId) GameState
-        +saveGame(game, ttl) void
-        +deleteGame(gameId) void
-        +getUserCurrentGame(userId) string
-        +setUserCurrentGame(userId, gameId) void
-        +clearUserCurrentGame(userId) void
         +saveGameToDb(gameId) void
         +getGameHistory(userId) Game[]
-        +getPublicGameHistory(userId) Game[]
-        +generateGameId() string
-        +getGameById(gameId) Game
     }
 
     class AiService {
-        -Logger logger
         +getBestMove(fen, difficulty, botColor) Move
         +evaluatePosition(fen) number
         -minimax(chess, depth, alpha, beta, maximizing) number
-        -quiescence(chess, alpha, beta, maximizing, depth) number
-        -evaluate(chess) number
-        -orderMoves(moves, chess) Move[]
-        -getRandomMove(chess) Move
     }
 
     class AuthService {
-        -NodePgDatabase db
-        -JwtService jwtService
-        -ConfigService configService
         +register(dto) AuthResult
         +login(dto) AuthResult
         +refreshTokens(refreshToken) AuthTokens
-        -generateTokens(userId, username, email) AuthTokens
     }
 
     class ChatService {
-        -NodePgDatabase db
-        -Redis redis
         +getOrCreatePrivateRoom(user1Id, user2Id) string
         +saveMessage(roomId, senderId, senderUsername, content) ChatMessage
         +getMessages(roomId, limit) ChatMessage[]
@@ -183,14 +119,8 @@ classDiagram
     }
 
     class TournamentService {
-        -NodePgDatabase db
-        -Redis redis
-        -TournamentSwissService swissService
-        -GameService gameService
         +listTournaments() Tournament[]
         +getTournament(id) Tournament
-        +getTournamentRounds(tournamentId) TournamentRound[]
-        +getCurrentRound(tournamentId) number
         +createTournament(creatorId, dto) Tournament
         +joinTournament(tournamentId, userId) void
         +leaveTournament(tournamentId, userId) void
@@ -198,13 +128,9 @@ classDiagram
         +nextRound(tournamentId, userId?) RoundResult
         +finishTournament(tournamentId, userId) void
         +deleteTournament(tournamentId, userId, isAdmin) void
-        +recordTournamentResult(tournamentId, gameId, result) TournamentRound
-        +getTournamentGameInfo(gameId) GameInfo
-        +getMyTournaments(userId) Tournament[]
     }
 
     class TournamentSwissService {
-        -NodePgDatabase db
         +generateNextRoundPairs(tournamentId, nextRound) SwissRoundResult
         -buildPlayerList(tournamentId) SwissPlayer[]
         -pairPlayers(players, pastMatches) SwissPairing[]
@@ -212,27 +138,21 @@ classDiagram
     }
 
     class LeaderboardService {
-        -Redis redis
-        -NodePgDatabase db
         +updateElo(dto) void
         +getTopPlayers(category, limit, offset) LeaderboardUpdate
         +getPlayerRank(userId, category) RankResult
-        +seedDemoData() void
     }
 
     class UserService {
-        -NodePgDatabase db
         +getMe(userId) UserProfile
         +updateMe(userId, dto) void
         +getPublicProfile(userId) PublicProfile
-        +getPendingRequests(userId) FriendRequest[]
         +sendFriendRequest(fromId, toUsername) void
         +respondFriendRequest(requestId, accept) void
         +getFriendList(userId) Friend[]
     }
 
     class WatchService {
-        -Redis redis
         +addSpectator(gameId) number
         +removeSpectator(gameId) number
         +getSpectatorCount(gameId) number
@@ -240,230 +160,48 @@ classDiagram
     }
 
     %% ═══════════════════════════════════════════════════════
-    %% CONTROLLERS (REST API)
-    %% ═══════════════════════════════════════════════════════
-    class AuthController {
-        +POST /auth/register
-        +POST /auth/login
-        +POST /auth/refresh
-    }
-
-    class GameController {
-        +GET /game/history
-        +GET /game/history/:userId
-        +GET /game/:id
-        +GET /game/:id/history
-    }
-
-    class TournamentController {
-        +GET /tournament
-        +GET /tournament/my
-        +GET /tournament/:id
-        +GET /tournament/:id/rounds
-        +POST /tournament
-        +POST /tournament/:id/join
-        +DELETE /tournament/:id/leave
-        +PATCH /tournament/:id/start
-        +PATCH /tournament/:id/next-round
-        +PATCH /tournament/:id/finish
-        +DELETE /tournament/:id
-    }
-
-    class UserController {
-        +GET /user/me
-        +PATCH /user/me
-        +GET /user/:id
-        +GET /user/friend-requests
-        +POST /user/friends/request
-        +PUT /user/friends/respond
-        +GET /user/friends
-    }
-
-    %% ═══════════════════════════════════════════════════════
-    %% DTOS & ENTITIES
-    %% ═══════════════════════════════════════════════════════
-    class GameState {
-        +string id
-        +string fen
-        +string pgn
-        +string whiteId
-        +string blackId
-        +string whiteUsername
-        +string blackUsername
-        +string status
-        +string timeControl
-        +number whiteTimeMs
-        +number blackTimeMs
-        +string turn
-        +number lastMoveAt
-        +string winner
-        +string[] moveHistory
-        +VerboseMove[] verboseMoves
-        +boolean isBot
-        +string botDifficulty
-        +string botColor
-        +number createdAt
-    }
-
-    class MatchmakingEntry {
-        +string userId
-        +string username
-        +number rating
-        +string timeControl
-        +string socketId
-        +number joinedAt
-    }
-
-    class SwissPairing {
-        +string gameId
-        +string tournamentId
-        +number round
-        +string whiteId
-        +string whiteUsername
-        +string blackId
-        +string blackUsername
-        +string type
-    }
-
-    class SwissPlayer {
-        +string userId
-        +string username
-        +number tournamentPoints
-        +number rating
-        +number whitesPlayed
-        +number blacksPlayed
-        +string[] colorHistory
-        +boolean hadBye
-    }
-
-    class TournamentRound {
-        +string tournamentId
-        +number round
-        +TournamentGame[] games
-        +string status
-    }
-
-    class TournamentGame {
-        +string gameId
-        +string whiteId
-        +string blackId
-        +string whiteUsername
-        +string blackUsername
-        +number round
-        +string status
-        +string result
-    }
-
-    class LeaderboardEntry {
-        +number rank
-        +string userId
-        +string username
-        +number elo
-        +number wins
-        +number losses
-        +number draws
-        +number gamesPlayed
-        +number winRate
-        +string trend
-        +number eloChange
-    }
-
-    class UpdateEloDto {
-        +string userId
-        +string username
-        +string category
-        +number newElo
-        +number eloDelta
-        +number wins
-        +number losses
-        +number draws
-    }
-
-    %% ═══════════════════════════════════════════════════════
-    %% MODULES
-    %% ═══════════════════════════════════════════════════════
-    class Redis {
-        +SortedSet leaderboard
-        +Hash online_users
-        +List message_cache
-        +String game_state
-        +ZSET matchmaking_queue
-    }
-
-    class PostgreSQL {
-        +Table users
-        +Table games
-        +Table tournaments
-        +Table chat_rooms
-        +Table messages
-        +Table friends
-        +Table profile_info
-    }
-
-    %% ═══════════════════════════════════════════════════════
-    %% RELATIONSHIPS với MULTIPLICITY
+    %% RELATIONSHIPS
     %% ═══════════════════════════════════════════════════════
 
-    %% ── Gateway ──Service (1 Gateway dùng 1 Service) ──
-    GameGateway "1" --> "1" GameService : delegates
-    GameGateway "1" --> "1" AiService : botMoves
+    %% ─── [ASSOCIATION] Gateway ──Service: Gateway GIỮ reference đến Service ───
+    GameGateway        "1" --> "1" GameService         : delegates
+    GameGateway        "1" --> "1" AiService           : botMoves
+    WatchGateway       "1" --> "1" GameService         : reads
+    WatchGateway       "1" --> "1" WatchService        : manages
+    ChatGateway        "1" --> "1" ChatService         : delegates
+    TournamentGateway  "1" --> "1" TournamentService   : delegates
+    LeaderboardGateway "1" --> "1" LeaderboardService  : delegates
+
+    %% ─── [ASSOCIATION] Service ──Service: Service gọi Service khác ───
+    GameService        "1" --> "1" LeaderboardService     : updateELO
+    TournamentService  "1" --> "1" TournamentSwissService : pairings
+    TournamentService  "1" --> "1" GameService            : createGames
+
+    %% ─── [DEPENDENCY] Gateway ──Gateway: Giao tiếp GIÁN TIẾP qua event (không giữ ref) ───
+    GameGateway "1" ..> "0..1" WatchGateway       : broadcastGameUpdate
     GameGateway "1" ..> "0..1" LeaderboardGateway : notifyELO
-    GameGateway "1" ..> "0..1" WatchGateway : broadcast
-    GameGateway "1" ..> "0..1" TournamentGateway : notifyResult
+    GameGateway "1" ..> "0..1" TournamentGateway  : notifyResult
 
-    WatchGateway "1" --> "1" GameService : reads
-    WatchGateway "1" --> "1" WatchService : manages
-
-    ChatGateway "1" --> "1" ChatService : delegates
-    ChatGateway "1" --> "1" Redis : onlineUsers
-
-    TournamentGateway "1" --> "1" TournamentService : delegates
-
-    LeaderboardGateway "1" --> "1" LeaderboardService : delegates
-
-    %% ── Service ──Service ──
-    GameService "1" --> "1" LeaderboardService : updateELO
-    TournamentService "1" --> "1" TournamentSwissService : pairings
-    TournamentService "1" --> "1" GameService : createGames
-
-    %% ── Service ──Infrastructure ──
-    GameService "1" --> "1" Redis : gameState + queue
-    GameService "1" --> "1" PostgreSQL : persistGames
-    AuthService "1" --> "1" PostgreSQL : users
-    AuthService "1" --> "1" Redis : tokenStore
-    ChatService "1" --> "1" PostgreSQL : messages
-    ChatService "1" --> "1" Redis : messageCache
-    TournamentService "1" --> "1" Redis : roundData
-    TournamentService "1" --> "1" PostgreSQL : tournamentCRUD
-    LeaderboardService "1" --> "1" Redis : rankingZSET
-    LeaderboardService "1" --> "1" PostgreSQL : persistELO
-    UserService "1" --> "1" PostgreSQL : userProfileFriends
-
-    %% ── Controller ──Service ──
-    AuthController "1" --> "1" AuthService
-    GameController "1" --> "1" GameService
-    TournamentController "1" --> "1" TournamentService
-    TournamentController "1" --> "1" TournamentGateway
-    UserController "1" --> "1" UserService
-
-    %% ── Service tạo/nhiều DTO ──
-    GameService "1" ..> "0..*" GameState : creates
-    GameService "1" ..> "0..*" MatchmakingEntry : queues
-    TournamentSwissService "1" ..> "0..*" SwissPairing : generates
-    TournamentSwissService "1" ..> "0..*" SwissPlayer : evaluates
-    LeaderboardService "1" ..> "0..*" LeaderboardEntry : produces
-
-    %% ── Gateway implements NestJS interfaces ──
+    %% ─── [IMPLEMENTATION] Gateway implements NestJS interfaces ───
     GameGateway ..|> OnGatewayInit
     GameGateway ..|> OnGatewayConnection
     GameGateway ..|> OnGatewayDisconnect
 
+    %% ─── Namespace annotations ───
     note for GameGateway "namespace: /chess"
     note for WatchGateway "namespace: /watch"
     note for ChatGateway "namespace: /chat"
     note for TournamentGateway "namespace: /tournament"
     note for LeaderboardGateway "namespace: /leaderboard"
 ```
+
+| Loại quan hệ | Mũi tên | Màu sắc ý nghĩa | Áp dụng |
+|-------------|---------|-----------------|---------|
+| **Association** | `-->` (liền →) | 🔵 Gateway→Service, Service→Service | Giữ reference trực tiếp |
+| **Dependency** | `..>` (đứt →) | 🟠 Gateway→Gateway | Giao tiếp gián tiếp qua event |
+| **Implementation** | `..\|>` (đứt ▷) | 🟢 Gateway→Interface | Implements NestJS lifecycle |
+
+> 🔗 **Đọc thêm**: [UML Relationship Arrows — Toàn Tập](uml-relationship-arrows.md) — giải thích chi tiết 6 loại mũi tên, kèm cây quyết định chọn đúng loại quan hệ.
 
 ---
 
@@ -1333,18 +1071,20 @@ graph LR
 
 ## Phụ lục: Ký hiệu UML trong Class Diagram
 
-### Quan hệ (Relationships)
+> 📘 **Xem đầy đủ**: [UML Relationship Arrows — Toàn Tập](uml-relationship-arrows.md) — bao gồm cây quyết định chọn đúng loại quan hệ, ví dụ chi tiết, và Mermaid cheat sheet.
 
-| Ký hiệu Mermaid | Ký hiệu UML | Ý nghĩa | Ví dụ trong hệ thống |
-|---------|---------|---------|---------------------|
-| `--|>` | ──▷ (solid + hollow △) | **Kế thừa (Inheritance)** — class này IS-A class kia | (Không dùng nhiều trong NestJS DI) |
-| `..|>` | - -▷ (dashed + hollow △) | **Implementation** — implements interface | `GameGateway ..|> OnGatewayInit` |
-| `-->` | ──→ (solid + open arrow) | **Association** — quan hệ mạnh, class này chứa/owns class kia | `GameGateway --> GameService` |
-| `..>` | - -→ (dashed + open arrow) | **Dependency** — quan hệ yếu, dùng tạm thời | `GameService ..> GameState` (tạo DTO) |
-| `*--` | ◆── (solid + filled ◇) | **Composition** — quan hệ "is-part-of" mạnh, đối tượng con không tồn tại độc lập | `TournamentRound *-- TournamentGame` |
-| `o--` | ◇── (solid + hollow ◇) | **Aggregation** — quan hệ "has-a" yếu, đối tượng con tồn tại độc lập | (Hiếm dùng trong hệ thống) |
+### Tóm tắt 6 loại quan hệ
 
-### Multiplicity (Số lượng)
+| # | Loại | Mermaid | Mũi tên | Ý nghĩa | Dùng trong dự án |
+|---|------|---------|---------|---------|-----------------|
+| 1 | Kế thừa | `--|>` | ────▷ | IS-A | Ít dùng (NestJS dùng DI) |
+| 2 | Implementation | `..|>` | - - -▷ | CAN-DO (implements interface) | Gateway → NestJS lifecycle |
+| 3 | Composition | `*--` | ◆─── | IS-PART-OF mạnh | Round → Game |
+| 4 | Aggregation | `o--` | ◇─── | HAS-A yếu | Tournament → Participant |
+| 5 | Association | `-->` | ────→ | KNOWS-A (giữ reference) | Gateway → Service |
+| 6 | Dependency | `..>` | - - -→ | USES tạm thời | Gateway → Gateway (event) |
+
+### Multiplicity
 
 | Ký hiệu | Ý nghĩa |
 |---------|---------|
@@ -1352,12 +1092,11 @@ graph LR
 | `"0..1"` | 0 hoặc 1 |
 | `"0..*"` | 0 hoặc nhiều |
 | `"1..*"` | Ít nhất 1 |
-| `"n..m"` | Từ n đến m |
 
-### Thành viên (Members)
+### Members
 
 | Ký hiệu | Ý nghĩa |
 |---------|---------|
-| `+method()` | Public method |
-| `-method()` | Private method |
-| `#method()` | Protected method |
+| `+method()` | Public |
+| `-method()` | Private |
+| `#method()` | Protected |
