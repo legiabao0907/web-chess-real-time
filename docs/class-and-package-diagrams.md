@@ -405,46 +405,46 @@ classDiagram
     %% ═══════════════════════════════════════════════════════
 
     %% ── Gateway ──Service (1 Gateway dùng 1 Service) ──
-    GameGateway "1" ..> "1" GameService : delegates
-    GameGateway "1" ..> "1" AiService : botMoves
+    GameGateway "1" --> "1" GameService : delegates
+    GameGateway "1" --> "1" AiService : botMoves
     GameGateway "1" ..> "0..1" LeaderboardGateway : notifyELO
     GameGateway "1" ..> "0..1" WatchGateway : broadcast
     GameGateway "1" ..> "0..1" TournamentGateway : notifyResult
 
-    WatchGateway "1" ..> "1" GameService : reads
-    WatchGateway "1" ..> "1" WatchService : manages
+    WatchGateway "1" --> "1" GameService : reads
+    WatchGateway "1" --> "1" WatchService : manages
 
-    ChatGateway "1" ..> "1" ChatService : delegates
-    ChatGateway "1" ..> "1" Redis : onlineUsers
+    ChatGateway "1" --> "1" ChatService : delegates
+    ChatGateway "1" --> "1" Redis : onlineUsers
 
-    TournamentGateway "1" ..> "1" TournamentService : delegates
+    TournamentGateway "1" --> "1" TournamentService : delegates
 
-    LeaderboardGateway "1" ..> "1" LeaderboardService : delegates
+    LeaderboardGateway "1" --> "1" LeaderboardService : delegates
 
     %% ── Service ──Service ──
-    GameService "1" ..> "1" LeaderboardService : updateELO
-    TournamentService "1" ..> "1" TournamentSwissService : pairings
-    TournamentService "1" ..> "1" GameService : createGames
+    GameService "1" --> "1" LeaderboardService : updateELO
+    TournamentService "1" --> "1" TournamentSwissService : pairings
+    TournamentService "1" --> "1" GameService : createGames
 
     %% ── Service ──Infrastructure ──
-    GameService "1" ..> "1" Redis : gameState + queue
-    GameService "1" ..> "1" PostgreSQL : persistGames
-    AuthService "1" ..> "1" PostgreSQL : users
-    AuthService "1" ..> "1" Redis : tokenStore
-    ChatService "1" ..> "1" PostgreSQL : messages
-    ChatService "1" ..> "1" Redis : messageCache
-    TournamentService "1" ..> "1" Redis : roundData
-    TournamentService "1" ..> "1" PostgreSQL : tournamentCRUD
-    LeaderboardService "1" ..> "1" Redis : rankingZSET
-    LeaderboardService "1" ..> "1" PostgreSQL : persistELO
-    UserService "1" ..> "1" PostgreSQL : userProfileFriends
+    GameService "1" --> "1" Redis : gameState + queue
+    GameService "1" --> "1" PostgreSQL : persistGames
+    AuthService "1" --> "1" PostgreSQL : users
+    AuthService "1" --> "1" Redis : tokenStore
+    ChatService "1" --> "1" PostgreSQL : messages
+    ChatService "1" --> "1" Redis : messageCache
+    TournamentService "1" --> "1" Redis : roundData
+    TournamentService "1" --> "1" PostgreSQL : tournamentCRUD
+    LeaderboardService "1" --> "1" Redis : rankingZSET
+    LeaderboardService "1" --> "1" PostgreSQL : persistELO
+    UserService "1" --> "1" PostgreSQL : userProfileFriends
 
     %% ── Controller ──Service ──
-    AuthController "1" ..> "1" AuthService
-    GameController "1" ..> "1" GameService
-    TournamentController "1" ..> "1" TournamentService
-    TournamentController "1" ..> "1" TournamentGateway
-    UserController "1" ..> "1" UserService
+    AuthController "1" --> "1" AuthService
+    GameController "1" --> "1" GameService
+    TournamentController "1" --> "1" TournamentService
+    TournamentController "1" --> "1" TournamentGateway
+    UserController "1" --> "1" UserService
 
     %% ── Service tạo/nhiều DTO ──
     GameService "1" ..> "0..*" GameState : creates
@@ -689,8 +689,8 @@ classDiagram
     GameService "1" --> "0..*" GameState : creates~& manages
     GameService "1" --> "0..*" MatchmakingEntry : queue entries
 
-    GameService "1" ..> "1" Redis : MATCHMAKE_LUA + state
-    GameService "1" ..> "1" PostgreSQL : persist
+    GameService "1" --> "1" Redis : MATCHMAKE_LUA + state
+    GameService "1" --> "1" PostgreSQL : persist
 
     note for GameGateway "namespace: /chess"
     note for WatchGateway "namespace: /watch"
@@ -802,8 +802,8 @@ classDiagram
     TournamentSwissService "1" ..> "0..*" SwissPairing : generates
     TournamentSwissService "1" ..> "0..*" SwissPlayer : evaluates
 
-    TournamentGateway "1" ..> "1" Redis : roundData
-    TournamentService "1" ..> "1" PostgreSQL : CRUD
+    TournamentGateway "1" --> "1" Redis : roundData
+    TournamentService "1" --> "1" PostgreSQL : CRUD
 ```
 
 ---
@@ -853,11 +853,11 @@ classDiagram
     }
 
     ChatGateway "1" --> "1" ChatService : delegates
-    ChatGateway "1" ..> "1" Redis : online_users Hash
+    ChatGateway "1" --> "1" Redis : online_users Hash
     ChatService "1" --> "0..*" ChatRoom : manages
     ChatService "1" --> "0..*" Message : persists
-    ChatService "1" ..> "1" PostgreSQL : chat_rooms + messages
-    ChatGateway "1" ..> "1" Redis : message cache List
+    ChatService "1" --> "1" PostgreSQL : chat_rooms + messages
+    ChatGateway "1" --> "1" Redis : message cache List
 ```
 
 ---
@@ -929,12 +929,12 @@ classDiagram
 
     AuthService "1" --> "1" User : manages
     AuthService "1" --> "1" AuthTokens : generates
-    AuthService "1" ..> "1" PostgreSQL : users table
-    AuthService "1" ..> "1" Redis : token store
+    AuthService "1" --> "1" PostgreSQL : users table
+    AuthService "1" --> "1" Redis : token store
 
-    UserService "1" ..> "1" PostgreSQL : users + profile_info + friends
+    UserService "1" --> "1" PostgreSQL : users + profile_info + friends
 
-    JwtAuthGuard "1" ..> "1" AuthService : validate
+    JwtAuthGuard "1" --> "1" AuthService : validate
 ```
 
 ---
@@ -991,8 +991,8 @@ classDiagram
     LeaderboardGateway "1" --> "1" LeaderboardService : delegates
     LeaderboardService "1" ..> "0..*" LeaderboardEntry : produces
     LeaderboardService "1" ..> "1" UpdateEloDto : consumes
-    LeaderboardService "1" ..> "1" Redis : SortedSet~+ Hash
-    LeaderboardService "1" ..> "1" PostgreSQL : persist ELO
+    LeaderboardService "1" --> "1" Redis : SortedSet~+ Hash
+    LeaderboardService "1" --> "1" PostgreSQL : persist ELO
 ```
 
 ---
@@ -1333,15 +1333,31 @@ graph LR
 
 ## Phụ lục: Ký hiệu UML trong Class Diagram
 
+### Quan hệ (Relationships)
+
+| Ký hiệu Mermaid | Ký hiệu UML | Ý nghĩa | Ví dụ trong hệ thống |
+|---------|---------|---------|---------------------|
+| `--|>` | ──▷ (solid + hollow △) | **Kế thừa (Inheritance)** — class này IS-A class kia | (Không dùng nhiều trong NestJS DI) |
+| `..|>` | - -▷ (dashed + hollow △) | **Implementation** — implements interface | `GameGateway ..|> OnGatewayInit` |
+| `-->` | ──→ (solid + open arrow) | **Association** — quan hệ mạnh, class này chứa/owns class kia | `GameGateway --> GameService` |
+| `..>` | - -→ (dashed + open arrow) | **Dependency** — quan hệ yếu, dùng tạm thời | `GameService ..> GameState` (tạo DTO) |
+| `*--` | ◆── (solid + filled ◇) | **Composition** — quan hệ "is-part-of" mạnh, đối tượng con không tồn tại độc lập | `TournamentRound *-- TournamentGame` |
+| `o--` | ◇── (solid + hollow ◇) | **Aggregation** — quan hệ "has-a" yếu, đối tượng con tồn tại độc lập | (Hiếm dùng trong hệ thống) |
+
+### Multiplicity (Số lượng)
+
 | Ký hiệu | Ý nghĩa |
 |---------|---------|
-| `+method()` | Public method |
-| `-method()` | Private method |
-| `-->`  | Association (quan hệ mạnh — class này chứa/owns class kia) |
-| `..>`  | Dependency (quan hệ yếu — class này dùng class kia tạm thời) |
-| `..\|>` | Implementation (implements interface) |
-| `"1"` | Đúng 1 (multiplicity) |
+| `"1"` | Đúng 1 |
 | `"0..1"` | 0 hoặc 1 |
 | `"0..*"` | 0 hoặc nhiều |
 | `"1..*"` | Ít nhất 1 |
 | `"n..m"` | Từ n đến m |
+
+### Thành viên (Members)
+
+| Ký hiệu | Ý nghĩa |
+|---------|---------|
+| `+method()` | Public method |
+| `-method()` | Private method |
+| `#method()` | Protected method |
