@@ -24,7 +24,7 @@
 
 ## 1. Backend Class Diagram — Tổng quan
 
-### 1.1 Backend Class Diagram — Gateways & Services
+### 1.1 Backend Class Diagram — Gateways & Services (Đầy đủ thuộc tính + phương thức)
 
 Sơ đồ **tinh gọn** chỉ thể hiện quan hệ giữa **Gateways (WebSocket)** và **Services (Business Logic)**.  
 Controllers, Redis, PostgreSQL, DTOs đã được lược bỏ để tập trung vào kiến trúc cốt lõi.
@@ -39,6 +39,19 @@ classDiagram
     %% GATEWAYS (WebSocket)
     %% ═══════════════════════════════════════════════════════
     class GameGateway {
+        -Server server
+        -Logger logger
+        -Map connectedClients
+        -Map reMatchIntervals
+        -GameService gameService
+        -AiService aiService
+        -LeaderboardGateway leaderboardGateway
+        -WatchGateway watchGateway
+        -TournamentGateway tournamentGateway
+        +afterInit(server)
+        +handleConnection(client)
+        +handleDisconnect(client)
+        +handleReconnectCheck(data)
         +handleFindGame(data)
         +handleCancelSearch(data)
         +handleMakeMove(data)
@@ -49,78 +62,161 @@ classDiagram
         +handleStartBotGame(data)
         +handleJoinGame(data)
         +handleClaimTimeout(data)
+        -startReMatchIntervals()
+        -emitSearchProgress(timeControl)
+        -createGameFromMatch(p1, p2, tc)
     }
 
     class WatchGateway {
+        -Server server
+        -Logger logger
+        -Map spectators
+        -WatchService watchService
+        -GameService gameService
+        +afterInit(server)
+        +handleConnection(client)
+        +handleDisconnect(client)
         +handleWatchGame(data)
         +handleLeaveWatch(data)
-        +broadcastGameUpdate(gameId, move)
-        +broadcastGameOver(gameId, result)
+        +handleListLiveGames(client)
+        +broadcastGameUpdate(gameId, data)
+        +broadcastGameOver(gameId, data)
+        -handleLeaveInternal(client, gameId)
     }
 
     class ChatGateway {
+        -Server server
+        -Logger logger
+        -Map clients
+        -Map userSockets
+        -Redis redis
+        -ChatService chatService
+        +afterInit(server)
+        +handleConnection(client)
+        +handleDisconnect(client)
         +handleIdentify(data)
         +handleJoinDm(data)
         +handleSendDm(data)
         +handleSendDirectMessage(data)
         +handleGetHistory(data)
         +handleTyping(data)
+        +emitToUser(userId, event, data)
+        -broadcastUserStatus(userId, username, isOnline)
     }
 
     class TournamentGateway {
+        -Server server
+        -Logger logger
+        -Map userSockets
+        -Map clients
+        -Map nextRoundTimers
+        -TournamentService tournamentService
+        +afterInit()
+        +handleConnection(client)
+        +handleDisconnect(client)
         +handleIdentify(data)
         +handleJoinRoom(data)
         +handleLeaveRoom(data)
         +broadcastTournamentUpdate(tournamentId, data)
         +notifyPlayer(userId, event, data)
+        +setNextRoundTimer(tournamentId, ts)
+        +clearNextRoundTimer(tournamentId)
     }
 
     class LeaderboardGateway {
+        -Server server
+        -Logger logger
+        -Map subscribedClients
+        -LeaderboardService leaderboardService
+        +afterInit()
+        +handleConnection(client)
+        +handleDisconnect(client)
         +handleSubscribe(data)
         +handleUnsubscribe(data)
         +handleRequest(data)
         +triggerEloUpdate(params)
-        +broadcastLeaderboard(category)
+        +broadcastLeaderboard(category, limit)
     }
 
     %% ═══════════════════════════════════════════════════════
     %% SERVICES (Business Logic)
     %% ═══════════════════════════════════════════════════════
     class GameService {
-        +joinQueue(entry, maxEloDiff) MatchmakingEntry
+        -Logger logger
+        -Redis redisClient
+        -NodePgDatabase db
+        -string matchmakeSha
+        -string leaveQueueSha
+        +onModuleInit()
+        +joinQueue(entry, maxEloDiff) MatchmakingEntry|null
         +leaveQueue(userId, timeControl) void
+        +getQueueSize(timeControl) number
+        +getQueueEntries(timeControl) MatchmakingEntry[]
+        +reMatchWaitingPlayers(tc) Match[]
+        +getExpandedEloRange(joinedAt) number
+        +generateGameId() string
         +createGameState(gameId, white, black, tc) GameState
-        +processMove(gameId, userId, move) MoveResult
+        +processMove(gameId, userId, move) MoveResult|null
         +resign(gameId, userId) GameState
         +offerDraw(gameId, userId) boolean
         +acceptDraw(gameId) GameState
-        +getGame(gameId) GameState
+        +getGame(gameId) GameState|null
+        +saveGame(game, ttl) void
+        +deleteGame(gameId) void
+        +getUserCurrentGame(userId) string|null
+        +setUserCurrentGame(userId, gameId) void
+        +clearUserCurrentGame(userId) void
         +saveGameToDb(gameId) void
         +getGameHistory(userId) Game[]
+        -gameKey(gameId) string
+        -matchmakingKey(timeControl) string
+        -userGameKey(userId) string
     }
 
     class AiService {
-        +getBestMove(fen, difficulty, botColor) Move
+        -Logger logger
+        +getBestMove(fen, difficulty, botColor) Move|null
         +evaluatePosition(fen) number
         -minimax(chess, depth, alpha, beta, maximizing) number
+        -quiescence(chess, alpha, beta, maximizing) number
+        -evaluate(chess) number
+        -evaluateMaterial(chess) number
+        -evaluatePst(chess) number
+        -evaluateMobility(chess) number
+        -orderMoves(moves, chess) Move[]
+        -getRandomMove(chess) Move|null
     }
 
     class AuthService {
-        +register(dto) AuthResult
-        +login(dto) AuthResult
+        -NodePgDatabase db
+        -JwtService jwtService
+        -ConfigService configService
+        +register(dto) AuthResponse
+        +login(dto) AuthResponse
         +refreshTokens(refreshToken) AuthTokens
+        -generateTokens(userId, username, email) AuthTokens
     }
 
     class ChatService {
+        -Logger logger
+        -Redis redis
+        -NodePgDatabase db
         +getOrCreatePrivateRoom(user1Id, user2Id) string
         +saveMessage(roomId, senderId, senderUsername, content) ChatMessage
         +getMessages(roomId, limit) ChatMessage[]
         +getUserRooms(userId) string[]
+        -roomCacheKey(roomId) string
     }
 
     class TournamentService {
+        -NodePgDatabase db
+        -Redis redis
+        -TournamentSwissService swissService
+        -GameService gameService
         +listTournaments() Tournament[]
         +getTournament(id) Tournament
+        +getTournamentRounds(tournamentId) TournamentRound[]
+        +getCurrentRound(tournamentId) number
         +createTournament(creatorId, dto) Tournament
         +joinTournament(tournamentId, userId) void
         +leaveTournament(tournamentId, userId) void
@@ -128,35 +224,62 @@ classDiagram
         +nextRound(tournamentId, userId?) RoundResult
         +finishTournament(tournamentId, userId) void
         +deleteTournament(tournamentId, userId, isAdmin) void
+        +recordTournamentResult(tournamentId, gameId, result) TournamentRound
+        +getTournamentGameInfo(gameId) GameInfo
+        +getMyTournaments(userId) Tournament[]
+        -roundsKey(tournamentId) string
+        -roundKey(tournamentId, round) string
+        -currentRoundKey(tournamentId) string
+        -generateSwissPairings(tournamentId, round) TournamentRound
+        -applyRoundResults(tournamentId, games) void
     }
 
     class TournamentSwissService {
+        -NodePgDatabase db
         +generateNextRoundPairs(tournamentId, nextRound) SwissRoundResult
-        -buildPlayerList(tournamentId) SwissPlayer[]
-        -pairPlayers(players, pastMatches) SwissPairing[]
-        -calculateTiebreaks(player) number
+        -resolveResult(whiteId, blackId, winnerId, status) string
+        -buildPlayerStats(tournamentId) SwissPlayer[]
+        -runSwissPairing(players, pastMatches, tournamentId, round) SwissPairing[]
+        -buildScoreGroups(players) SwissPlayer[][]
+        -pairGroup(players, pastMatches, round) SwissPairing[]
+        -assignColor(p1, p2) SwissPairing
+        -pairKey(id1, id2) string
     }
 
     class LeaderboardService {
+        -Logger logger
+        -Redis redis
+        -NodePgDatabase db
         +updateElo(dto) void
         +getTopPlayers(category, limit, offset) LeaderboardUpdate
         +getPlayerRank(userId, category) RankResult
+        +seedDemoData() void
+        -leaderboardKey(category) string
+        -playerDataKey(userId, category) string
     }
 
     class UserService {
+        -NodePgDatabase db
         +getMe(userId) UserProfile
         +updateMe(userId, dto) void
         +getPublicProfile(userId) PublicProfile
-        +sendFriendRequest(fromId, toUsername) void
-        +respondFriendRequest(requestId, accept) void
+        +getFriendshipStatus(myId, targetId) FriendshipStatus
+        +sendFriendRequest(myId, targetId) void
+        +acceptFriendRequest(myId, requesterId) void
+        +removeFriend(myId, targetId) void
+        +getPendingRequests(userId) FriendRequest[]
         +getFriendList(userId) Friend[]
+        +respondFriendRequest(requestId, accept) void
     }
 
     class WatchService {
+        -Logger logger
+        -Redis redis
         +addSpectator(gameId) number
         +removeSpectator(gameId) number
         +getSpectatorCount(gameId) number
         +listActiveGames() LiveGameSummary[]
+        -spectatorKey(gameId) string
     }
 
     %% ═══════════════════════════════════════════════════════
@@ -187,19 +310,35 @@ classDiagram
     GameGateway ..|> OnGatewayConnection
     GameGateway ..|> OnGatewayDisconnect
 
-    %% ─── Namespace annotations ───
-    note for GameGateway "namespace: /chess"
-    note for WatchGateway "namespace: /watch"
-    note for ChatGateway "namespace: /chat"
-    note for TournamentGateway "namespace: /tournament"
-    note for LeaderboardGateway "namespace: /leaderboard"
+    %% ─── Chú thích từng class ───
+    note for GameGateway "namespace: /chess — Xử lý matchmaking, nước đi, đầu hàng, hòa, bot game"
+    note for WatchGateway "namespace: /watch — Chế độ khán giả xem trận đấu trực tiếp"
+    note for ChatGateway "namespace: /chat — DM 1-1: room-based + Redis direct routing"
+    note for TournamentGateway "namespace: /tournament — Cập nhật giải đấu + countdown timer"
+    note for LeaderboardGateway "namespace: /leaderboard — Bảng xếp hạng + cập nhật ELO real-time"
+    
+    note for GameService "Lua script matchmaking, quản lý game state Redis, persist PostgreSQL"
+    note for AiService "Minimax Alpha-Beta + Quiescence Search + PST evaluation"
+    note for AuthService "JWT access/refresh token + bcrypt password hashing"
+    note for ChatService "Quản lý room, cache 50 msg gần nhất, TTL 1 giờ"
+    note for TournamentService "Swiss pairing, quản lý vòng đấu, round state Redis"
+    note for TournamentSwissService "Thuật toán Swiss: score groups, color balancing, byes"
+    note for LeaderboardService "Redis ZSET ranking O(log N), persist ELO PostgreSQL"
+    note for UserService "Profile, friend request, friendship status cache"
+    note for WatchService "Spectator counter Redis INCR/DECR, live game discovery SCAN"
 ```
 
-| Loại quan hệ | Mũi tên | Màu sắc ý nghĩa | Áp dụng |
-|-------------|---------|-----------------|---------|
-| **Association** | `-->` (liền →) | 🔵 Gateway→Service, Service→Service | Giữ reference trực tiếp |
-| **Dependency** | `..>` (đứt →) | 🟠 Gateway→Gateway | Giao tiếp gián tiếp qua event |
-| **Implementation** | `..\|>` (đứt ▷) | 🟢 Gateway→Interface | Implements NestJS lifecycle |
+| Loại quan hệ | Mũi tên | Ý nghĩa | Áp dụng trong hệ thống |
+|-------------|---------|---------|----------------------|
+| **Association** | `-->` (liền →) | 🔵 Giữ reference trực tiếp, quan hệ mạnh | Gateway→Service, Service→Service |
+| **Dependency** | `..>` (đứt →) | 🟠 Dùng tạm thời, không giữ reference | Gateway→Gateway (event-based) |
+| **Implementation** | `..\|>` (đứt ▷) | 🟢 Implements interface | Gateway→OnGatewayInit/Connection/Disconnect |
+
+| Ký hiệu thành viên | Ý nghĩa |
+|-------------------|---------|
+| `+method()` | Public method |
+| `-method()` | Private method |
+| `-field` | Private attribute (dependency injection) |
 
 > 🔗 **Đọc thêm**: [UML Relationship Arrows — Toàn Tập](uml-relationship-arrows.md) — giải thích chi tiết 6 loại mũi tên, kèm cây quyết định chọn đúng loại quan hệ.
 
@@ -335,8 +474,16 @@ classDiagram
     direction TB
 
     class GameGateway {
+        -Server server
+        -Logger logger
         -Map connectedClients
         -Map reMatchIntervals
+        -GameService gameService
+        -AiService aiService
+        +afterInit(server)
+        +handleConnection(client)
+        +handleDisconnect(client)
+        +handleReconnectCheck(data)
         +handleFindGame(data)
         +handleCancelSearch(data)
         +handleMakeMove(data)
@@ -348,6 +495,8 @@ classDiagram
         +handleJoinGame(data)
         +handleClaimTimeout(data)
         +handleSendMessage(data)
+        -startReMatchIntervals()
+        -emitSearchProgress(timeControl)
         -createGameFromMatch(p1, p2, tc)
         -handleGameOver(gameId, game)
         -triggerBotMove(gameId)
@@ -355,45 +504,100 @@ classDiagram
     }
 
     class GameService {
+        -Logger logger
         -Redis redisClient
         -NodePgDatabase db
-        +joinQueue(entry, maxEloDiff)
-        +leaveQueue(userId, timeControl)
-        +reMatchWaitingPlayers(tc)
-        +createGameState(gameId, white, black, tc)
-        +processMove(gameId, userId, move)
-        +resign(gameId, userId)
-        +offerDraw(gameId, userId)
-        +acceptDraw(gameId)
-        +getGame(gameId)
-        +saveGame(game, ttl)
-        +saveGameToDb(gameId)
-        +getGameHistory(userId)
-        +clearUserCurrentGame(userId)
+        -string matchmakeSha
+        -string leaveQueueSha
+        +onModuleInit()
+        +joinQueue(entry, maxEloDiff) MatchmakingEntry|null
+        +leaveQueue(userId, timeControl) void
+        +getQueueSize(timeControl) number
+        +getQueueEntries(timeControl) MatchmakingEntry[]
+        +reMatchWaitingPlayers(tc) Match[]
+        +getExpandedEloRange(joinedAt) number
+        +generateGameId() string
+        +createGameState(gameId, white, black, tc) GameState
+        +processMove(gameId, userId, move) MoveResult|null
+        +resign(gameId, userId) GameState
+        +offerDraw(gameId, userId) boolean
+        +acceptDraw(gameId) GameState
+        +getGame(gameId) GameState|null
+        +saveGame(game, ttl) void
+        +deleteGame(gameId) void
+        +getUserCurrentGame(userId) string|null
+        +setUserCurrentGame(userId, gameId) void
+        +clearUserCurrentGame(userId) void
+        +saveGameToDb(gameId) void
+        +getGameHistory(userId) Game[]
+        -gameKey(gameId) string
+        -matchmakingKey(timeControl) string
+        -userGameKey(userId) string
     }
 
     class AiService {
-        +getBestMove(fen, difficulty, botColor)
-        +evaluatePosition(fen)
-        -minimax(chess, depth, alpha, beta, maximizing)
-        -quiescence(chess, alpha, beta, maximizing)
-        -evaluate(chess)
-        -orderMoves(moves, chess)
+        -Logger logger
+        +getBestMove(fen, difficulty, botColor) Move|null
+        +evaluatePosition(fen) number
+        -minimax(chess, depth, alpha, beta, maximizing) number
+        -quiescence(chess, alpha, beta, maximizing) number
+        -evaluate(chess) number
+        -evaluateMaterial(chess) number
+        -evaluatePst(chess) number
+        -evaluateMobility(chess) number
+        -orderMoves(moves, chess) Move[]
+        -getRandomMove(chess) Move|null
     }
 
     class WatchGateway {
+        -Server server
+        -Logger logger
+        -Map spectators
+        -WatchService watchService
+        -GameService gameService
+        +afterInit(server)
+        +handleConnection(client)
+        +handleDisconnect(client)
         +handleWatchGame(data)
-        +broadcastGameUpdate(gameId, move)
-        +broadcastGameOver(gameId, result)
+        +handleLeaveWatch(data)
+        +handleListLiveGames(client)
+        +broadcastGameUpdate(gameId, data)
+        +broadcastGameOver(gameId, data)
+        -handleLeaveInternal(client, gameId)
     }
 
     class LeaderboardGateway {
+        -Server server
+        -Logger logger
+        -Map subscribedClients
+        -LeaderboardService leaderboardService
+        +afterInit()
+        +handleConnection(client)
+        +handleDisconnect(client)
+        +handleSubscribe(data)
+        +handleUnsubscribe(data)
+        +handleRequest(data)
         +triggerEloUpdate(params)
+        +broadcastLeaderboard(category, limit)
     }
 
     class TournamentGateway {
-        +broadcastTournamentUpdate(tId, data)
+        -Server server
+        -Logger logger
+        -Map userSockets
+        -Map clients
+        -Map nextRoundTimers
+        -TournamentService tournamentService
+        +afterInit()
+        +handleConnection(client)
+        +handleDisconnect(client)
+        +handleIdentify(data)
+        +handleJoinRoom(data)
+        +handleLeaveRoom(data)
+        +broadcastTournamentUpdate(tournamentId, data)
         +notifyPlayer(userId, event, data)
+        +setNextRoundTimer(tournamentId, ts)
+        +clearNextRoundTimer(tournamentId)
     }
 
     class GameState {
@@ -430,10 +634,14 @@ classDiagram
     GameService "1" --> "1" Redis : MATCHMAKE_LUA + state
     GameService "1" --> "1" PostgreSQL : persist
 
-    note for GameGateway "namespace: /chess"
-    note for WatchGateway "namespace: /watch"
-    note for LeaderboardGateway "namespace: /leaderboard"
-    note for TournamentGateway "namespace: /tournament"
+    note for GameGateway "namespace: /chess — Matchmaking, nước đi, đầu hàng, hòa, bot game"
+    note for GameService "Lua script atomic matchmaking ZSET, game state Redis, persist DB"
+    note for AiService "Minimax Alpha-Beta + Quiescence Search + PST + Mobility evaluation"
+    note for WatchGateway "namespace: /watch — Spectator mode: buffer updates, replay on join"
+    note for LeaderboardGateway "namespace: /leaderboard — Real-time ELO + flash animation"
+    note for TournamentGateway "namespace: /tournament — Tournament round countdown + notify"
+    note for GameState "DTO: Trạng thái game lưu trong Redis (TTL 3600s)"
+    note for MatchmakingEntry "DTO: Entry trong ZSET queue (score = rating)"
 ```
 
 ---
@@ -542,6 +750,15 @@ classDiagram
 
     TournamentGateway "1" --> "1" Redis : roundData
     TournamentService "1" --> "1" PostgreSQL : CRUD
+
+    note for TournamentGateway "namespace: /tournament — Real-time update + countdown timer"
+    note for TournamentService "Swiss pairings, round state Redis (TTL 7 ngày), game creation"
+    note for TournamentSwissService "Score groups, color balancing, floater management, byes"
+    note for TournamentController "REST API: CRUD tournament, join/leave, start/next/finish"
+    note for TournamentRound "Redis-stored round data với array TournamentGame"
+    note for TournamentGame "Kết quả từng game trong round (status: pending|active|finished)"
+    note for SwissPairing "Pairing output: gameId, white, black, type (normal|bye)"
+    note for SwissPlayer "Player stats: rating, điểm, color history, whites/blacks played"
 ```
 
 ---
@@ -596,6 +813,11 @@ classDiagram
     ChatService "1" --> "0..*" Message : persists
     ChatService "1" --> "1" PostgreSQL : chat_rooms + messages
     ChatGateway "1" --> "1" Redis : message cache List
+
+    note for ChatGateway "namespace: /chat — Room-based DM + Redis direct routing, multi-tab"
+    note for ChatService "Room CRUD, Redis cache 50 msg (LRU), TTL 1 giờ, persist DB"
+    note for ChatRoom "Room type: private (DM) | game | tournament"
+    note for Message "Tin nhắn: id, roomId, senderId, content, createdAt"
 ```
 
 ---
@@ -673,6 +895,14 @@ classDiagram
     UserService "1" --> "1" PostgreSQL : users + profile_info + friends
 
     JwtAuthGuard "1" --> "1" AuthService : validate
+
+    note for AuthController "REST: POST /auth/register, /login, /refresh"
+    note for AuthService "JWT access (15m) + refresh (7d), bcrypt hash, token Redis store"
+    note for UserController "REST: GET/PATCH /user/me, friends CRUD, public profile"
+    note for UserService "Profile CRUD, friend request (auto-accept nếu mutual), friendship cache"
+    note for JwtAuthGuard "CanActivate: Bearer token extract + verify, attach user to request"
+    note for User "DB Entity: users table (Drizzle ORM)"
+    note for AuthTokens "DTO: accessToken + refreshToken"
 ```
 
 ---
@@ -731,6 +961,11 @@ classDiagram
     LeaderboardService "1" ..> "1" UpdateEloDto : consumes
     LeaderboardService "1" --> "1" Redis : SortedSet~+ Hash
     LeaderboardService "1" --> "1" PostgreSQL : persist ELO
+
+    note for LeaderboardGateway "namespace: /leaderboard — Subscribe category, flash animation rows"
+    note for LeaderboardService "Redis ZSET O(log N) rank query, persist ELO + stats PostgreSQL"
+    note for LeaderboardEntry "DTO: rank, elo, wins/losses/draws, winRate, trend, eloChange"
+    note for UpdateEloDto "DTO input: userId, category, newElo, eloDelta, wins, losses, draws"
 ```
 
 ---
@@ -743,139 +978,236 @@ classDiagram
 
     %% ── ZUSTAND STORES ──
     class UserStore {
-        +User user
-        +boolean isAuthenticated
-        +login(email, password)
-        +register(data)
-        +logout()
-        +fetchProfile()
-        +updateLocalElo(newElo)
+        -User user
+        -boolean isAuthenticated
+        -boolean isLoading
+        +login(email, password) void
+        +register(username, email, password) void
+        +logout() void
+        +fetchProfile() void
+        +updateLocalElo(newElo) void
+        +loadFromStorage() void
     }
 
     class GameStore {
-        +GameState currentGame
-        +boolean isSearching
-        +number searchTime
-        +GameOverResult gameOver
-        +setGame(game)
-        +updateMove(move)
-        +setGameOver(result)
-        +setSearching(bool)
-        +reset()
+        -GameState currentGame
+        -boolean isSearching
+        -number searchTime
+        -GameOverResult gameOver
+        -string errorMessage
+        -SearchProgress searchProgress
+        +setGame(game) void
+        +updateMove(move) void
+        +setGameOver(result) void
+        +setSearching(bool) void
+        +setSearchProgress(progress) void
+        +setError(msg) void
+        +reset() void
     }
 
     class TournamentStore {
-        +Tournament[] tournaments
-        +Tournament currentTournament
-        +SwissPairing[] myPairings
-        +number currentRound
-        +number countdownSeconds
-        +fetchTournaments()
-        +setCurrentTournament(t)
-        +setPairings(pairings)
-        +startCountdown(ms)
-        +clearCountdown()
+        -Tournament[] tournaments
+        -Tournament currentTournament
+        -SwissPairing[] myPairings
+        -number currentRound
+        -number countdownSeconds
+        -boolean isLoading
+        +fetchTournaments() void
+        +setCurrentTournament(t) void
+        +setPairings(pairings) void
+        +setCurrentRound(round) void
+        +startCountdown(ms) void
+        +clearCountdown() void
     }
 
     class ChatStore {
-        +Map rooms
-        +number totalUnread
-        +string activeRoomId
-        +upsertRoomForDirect(msg)
-        +addMessage(roomId, msg)
-        +setActiveRoom(roomId)
-        +markRead(roomId)
-        +setTyping(roomId, userId, bool)
+        -Map rooms
+        -number totalUnread
+        -string activeRoomId
+        -Set onlineUsers
+        -pendingFriend
+        -boolean isOpen
+        +registerSendFns(send, sendTyping, sendDirect) void
+        +openChat(friendId, friendUsername) void
+        +closeChat() void
+        +setActiveRoom(roomId) void
+        +addRoom(room) void
+        +addMessage(roomId, msg) void
+        +setHistory(roomId, messages) void
+        +markRead(roomId) void
+        +setTyping(roomId, userId, bool) void
+        +setUserOnline(userId, bool) void
+        +upsertRoomForDirect(params) void
     }
 
     %% ── CUSTOM HOOKS ──
     class UseChessSocket {
         -Socket socket
-        +connect()
-        +joinQueue(timeControl)
-        +makeMove(from, to, promotion)
-        +resign()
-        +offerDraw()
-        +startBotGame(difficulty, color)
+        -boolean connected
+        -GameState game
+        -string gameStatus
+        -ChatMessage[] chatMessages
+        -boolean drawOffered
+        -string errorMessage
+        -string searchingTimeControl
+        -PositionAnalysis analysis
+        -SearchProgress searchProgress
+        +connect() void
+        +findGame(timeControl, rating?) void
+        +cancelSearch(timeControl) void
+        +joinGame(gameId) void
+        +makeMove(gameId, from, to, promotion?) void
+        +resign(gameId) void
+        +offerDraw(gameId) void
+        +acceptDraw(gameId) void
+        +declineDraw(gameId) void
+        +sendChatMessage(gameId, message) void
+        +startBotGame(difficulty) void
+        +requestAnalysis(fen) void
     }
 
     class UseFriendChat {
         -Socket socket
-        +connect(userId)
-        +sendMessage(roomId, content)
-        +sendDirectMessage(toUserId, content)
-        +joinDm(friendId)
+        -boolean connected
+        +connect(userId, username) void
+        +openDm(friendId, friendUsername) void
+        +sendMessage(roomId, content) void
+        +sendDirectMessage(toUserId, content) void
+        +sendTyping(roomId, isTyping) void
+        +disconnect() void
     }
 
     class UseWatchSocket {
         -Socket socket
-        +connect()
-        +watchGame(gameId)
-        +leaveWatch()
+        -WatchGameState watchingGame
+        -LiveGameSummary[] liveGames
+        -boolean isLoadingGames
+        -number spectatorCount
+        -pendingUpdates
+        +connect() void
+        +fetchLiveGames() void
+        +watchGame(gameId) void
+        +leaveWatch(gameId) void
+        +disconnect() void
     }
 
     class UseLeaderboard {
         -Socket socket
-        +subscribe(category)
-        +unsubscribe()
+        -boolean connected
+        -string category
+        -LeaderboardData data
+        -boolean loading
+        -Set flashedRows
+        +connect() void
+        +switchCategory(newCategory) void
+        +refresh() void
+        +disconnect() void
     }
 
     class UseStockfish {
         -Worker stockfish
-        +load()
-        +getBestMove(fen, difficulty)
-        +terminate()
+        -boolean isLoaded
+        -string currentFen
+        +load() void
+        +getBestMove(fen, difficulty) Move|null
+        +evaluatePosition(fen) StockfishEval
+        +terminate() void
+        -parseInfoLine(line, turn) Eval|null
+        -sendAnalysis(worker, fen) void
     }
 
     %% ── UI COMPONENTS ──
     class ChessBoard {
-        +onPieceDrop(source, target)
-        +highlightLegalMoves(square)
-        +flipBoard()
+        -string position
+        -string[] legalMoves
+        -boolean isFlipped
+        -boolean isMyTurn
+        +onPieceDrop(source, target) void
+        +highlightLegalMoves(square) void
+        +flipBoard() void
+        +resetBoard() void
+        -isDraggable() boolean
     }
 
     class ChatDrawer {
-        +selectRoom(roomId)
-        +sendMessage(content)
-        +showUnreadBadge(count)
+        -boolean isOpen
+        -string selectedRoomId
+        -Friend[] friendList
+        +open() void
+        +close() void
+        +selectRoom(roomId) void
+        +sendMessage(content) void
+        +showUnreadBadge(count) void
     }
 
     class GameOverModal {
-        +showWinner(winner)
-        +showEloChange(delta, oldElo, newElo)
+        -string winner
+        -number eloChange
+        -number oldElo
+        -number newElo
+        +showWinner(winner) void
+        +showEloChange(delta, oldElo, newElo) void
+        +close() void
     }
 
     class TournamentBracket {
-        +showStandings(players)
-        +showCountdown(seconds)
+        -SwissPlayer[] players
+        -SwissPairing[] pairings
+        -number countdownSeconds
+        +showStandings(players) void
+        +showPairings(pairings) void
+        +showCountdown(seconds) void
     }
 
     class MatchmakingPanel {
-        +selectTimeControl(tc)
-        +cancelSearch()
+        -string selectedTimeControl
+        -boolean isSearching
+        -number eloRange
+        +selectTimeControl(tc) void
+        +startSearch() void
+        +cancelSearch() void
+        -updateSearchProgress(progress) void
     }
 
     class LeaderboardTable {
-        +sortByCategory(category)
+        -string selectedCategory
+        -LeaderboardEntry[] entries
+        -Set flashedRows
+        +sortByCategory(category) void
+        +highlightChangedRows(rows) void
     }
 
     %% ── RELATIONSHIPS ──
     UseChessSocket "1" --> "1" GameStore : updates
     UseChessSocket "1" --> "1" UserStore : reads
     UseFriendChat "1" --> "1" ChatStore : updates
+    UseWatchSocket "1" --> "1" WatchStore : syncs
+    UseLeaderboard "1" --> "1" LeaderboardTable : feeds
 
-    ChessBoard "1" --> "1" UseChessSocket : emits
-    ChatDrawer "1" --> "1" UseFriendChat : emits
-    GameOverModal "1" --> "1" GameStore : reads
-    TournamentBracket "1" --> "1" TournamentStore : reads
-    MatchmakingPanel "1" --> "1" UseChessSocket : emits
+    ChessBoard "1" --> "1" UseChessSocket : emits moves
+    ChatDrawer "1" --> "1" UseFriendChat : emits messages
+    GameOverModal "1" --> "1" GameStore : reads result
+    TournamentBracket "1" --> "1" TournamentStore : reads standings
+    MatchmakingPanel "1" --> "1" UseChessSocket : emits queue
     LeaderboardTable "1" --> "1" UseLeaderboard : subscribes
-    UseStockfish "1" --> "1" ChessBoard : AI moves
+    UseStockfish "1" ..> "1" ChessBoard : AI moves (dependency)
 
-    note for UseChessSocket "namespace: /chess"
-    note for UseFriendChat "namespace: /chat"
-    note for UseWatchSocket "namespace: /watch"
-    note for UseLeaderboard "namespace: /leaderboard"
+    %% ── Chú thích ──
+    note for UserStore "Zustand: Auth state, profile, ELO sync localStorage"
+    note for GameStore "Zustand: Game state, search progress, game-over result"
+    note for TournamentStore "Zustand: Tournament list, pairings, countdown timer"
+    note for ChatStore "Zustand: Chat rooms, unread badges, online users, typing indicator"
+    note for UseChessSocket "Hook: Socket.IO /chess - reconnect check, sessionStorage persistence"
+    note for UseFriendChat "Hook: Socket.IO /chat - identify user, room + direct DM fallback"
+    note for UseWatchSocket "Hook: Socket.IO /watch - buffer updates until watch_state received"
+    note for UseLeaderboard "Hook: Socket.IO /leaderboard - category switch, flash animation"
+    note for UseStockfish "Hook: Web Worker Stockfish WASM - UCI parse, debounce analysis"
+    note for ChessBoard "UI: react-chessboard - drag & drop, legal move highlights"
+    note for ChatDrawer "UI: Friend list, DM dialog, typing indicator, connection status"
+    note for GameOverModal "UI: Winner display, ELO change +/- with glow effect"
+    note for TournamentBracket "UI: Standings table, pairing display, countdown timer"
+    note for MatchmakingPanel "UI: Time control selector, search animation, ELO range display"
+    note for LeaderboardTable "UI: Sortable table, flash animation for changed rows"
 ```
 
 ---
