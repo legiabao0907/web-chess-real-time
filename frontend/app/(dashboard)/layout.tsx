@@ -85,9 +85,7 @@ export default function DashboardLayout({
         <aside className="sidebar">
           <div className="sidebar-top">
             <div className="logo-container">
-              <span className="logo-text">
-                <span className="text-purple">Chess</span>Skyscraper
-              </span>
+              <span className="logo-text text-purple">ChessSkyscraper</span>
             </div>
 
             <nav className="sidebar-nav">
@@ -167,6 +165,10 @@ export default function DashboardLayout({
             <nav className="top-nav">
               <Link href="/home" className={`top-nav-item ${isActive("/home") ? "active" : ""}`}>SANCTUARY</Link>
               <Link href="/archives" className={`top-nav-item ${isActive("/archives") ? "active" : ""}`}>ARCHIVES</Link>
+              <Link href="/play" className="top-nav-find-match">
+                <Swords size={16} />
+                FIND MATCH
+              </Link>
             </nav>
 
             <div className="header-right">

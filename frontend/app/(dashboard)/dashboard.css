@@ -76,36 +76,42 @@
 .nav-link {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.85rem;
   padding: 0.75rem 1rem;
   border-radius: 0.75rem;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.45);
   text-decoration: none;
-  transition: colors 0.2s;
+  transition: background-color 0.2s, color 0.2s;
+  position: relative;
 }
 
 .nav-link:hover {
-  background-color: rgba(255, 255, 255, 0.05);
-  color: white;
+  background-color: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.7);
 }
 
+/* Active state — uses border-left via pseudo-element so text NEVER shifts */
 .nav-link.active {
-  background: linear-gradient(to right, #1a1120, transparent);
-  color: #e230ff;
-  justify-content: space-between;
+  color: #c084fc;
+  background: rgba(168, 85, 247, 0.1);
 }
 
-.nav-link.active .nav-link-content {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
+/* Vertical indicator bar — absolutely positioned, zero impact on text layout */
+.nav-link.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  background: #e879f9;
+  border-radius: 0 4px 4px 0;
+  box-shadow: 0 0 8px rgba(232, 121, 249, 0.5);
 }
 
-.nav-link.active .active-indicator {
-  width: 4px;
-  height: 16px;
-  background-color: #e230ff;
-  border-radius: 9999px;
+.nav-link.active svg {
+  color: #c084fc;
 }
 
 .nav-text {
@@ -1097,12 +1103,6 @@
 /* Logo text */
 .logo-text { font-size: 1.15rem; white-space: nowrap; }
 
-/* Active nav state - purple glow */
-.nav-link { color: rgba(255,255,255,0.35); transition: all 0.2s; }
-.nav-link:hover { color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.03); }
-.nav-link.active { color: #c084fc; background: rgba(168,85,247,0.1); box-shadow: inset 3px 0 0 #c084fc; }
-.nav-link.active svg { color: #c084fc; }
-
 /* Live dot */
 .live-dot {
   position: absolute; top: 8px; right: 10px;
@@ -1302,6 +1302,85 @@
   .dh-bottom-row { flex-direction: column; }
   .dh-side-panel { width: 100%; flex-direction: row; }
   .dh-side-panel .glass-card { flex: 1; }
+}
+@media (max-width: 768px) {
+  .dh-top-row { flex-direction: column; }
+  .dh-stats-row { flex-wrap: wrap; }
+  .dh-games-grid { grid-template-columns: 1fr; }
+}
+
+/* ════════════════════════════════════════════════════════
+   V2 UPDATES: Clean mini-board, full-width ELO, navbar FIND MATCH,
+   recent matches, leaderboard, sidebar fix
+   ════════════════════════════════════════════════════════ */
+
+/* ── Logo single word ── */
+.logo-text { font-size: 1.05rem; white-space: nowrap; letter-spacing: 0.04em; }
+
+/* ── Top navbar FIND MATCH button ── */
+.top-nav-find-match {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 16px; border-radius: 8px;
+  background: linear-gradient(135deg, #c084fc, #a855f7);
+  color: white; font-size: 11px; font-weight: 800; letter-spacing: 0.06em;
+  text-decoration: none; box-shadow: 0 0 20px rgba(168,85,247,0.35);
+  transition: transform 0.15s, box-shadow 0.2s;
+}
+.top-nav-find-match:hover { transform: scale(1.04); box-shadow: 0 0 30px rgba(168,85,247,0.55); }
+
+/* ── Remove old FIND MATCH from dashboard ── */
+.dh-find-match { display: none; }
+
+/* ── Cleaned-up mini chessboard ── */
+.mini-board { display: grid; grid-template-columns: repeat(8,1fr); width: 80px; height: 80px; border-radius: 4px; overflow: hidden; border: 1px solid rgba(255,255,255,0.08); }
+.mini-sq { display: flex; align-items: center; justify-content: center; width: 10px; height: 10px; }
+.mini-sq.light { background: #d8c8e8; }
+.mini-sq.dark { background: #4a3560; }
+.mini-piece { font-size: 9px; line-height: 1; text-shadow: 0 1px 1px rgba(0,0,0,0.3); }
+.mini-piece.white { color: #f5f0fa; filter: drop-shadow(0 0.5px 0 rgba(0,0,0,0.4)); }
+.mini-piece.black { color: #1a1028; filter: drop-shadow(0 0.5px 0 rgba(255,255,255,0.15)); }
+
+/* For puzzle board (larger) */
+.dh-puzzle-board .mini-board { width: 100%; height: auto; aspect-ratio: 1; }
+.dh-puzzle-board .mini-sq { width: 100%; height: auto; aspect-ratio: 1; }
+.dh-puzzle-board .mini-piece { font-size: clamp(10px,2.5vw,18px); }
+
+/* ── Bottom row v2: ELO full-width + right col ── */
+.dh-bottom-row-v2 { display: flex; gap: 1.25rem; align-items: flex-start; }
+.dh-elo-card-full { flex: 1; padding: 1.25rem 1.5rem; min-width: 0; }
+.dh-elo-chart-full { display: flex; gap: 6px; }
+.dh-elochart-full .dh-elo-yaxis { padding: 0 4px 18px 4px; }
+
+/* ── Right column ── */
+.dh-right-col { width: 310px; flex-shrink: 0; display: flex; flex-direction: column; gap: 1rem; }
+
+/* ── Recent Matches ── */
+.dh-recent { padding: 1.25rem 1.25rem 1rem; }
+.dh-section-title-sm { font-size: 10px; color: rgba(255,255,255,0.45); font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 1rem; }
+.dh-match-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.dh-match-row:last-child { border-bottom: none; }
+.dh-match-info { display: flex; flex-direction: column; gap: 2px; }
+.dh-match-opp { font-size: 12px; font-weight: 700; color: #d8d0e8; }
+.dh-match-type { font-size: 9px; color: rgba(255,255,255,0.3); }
+.dh-match-result { font-size: 13px; font-weight: 900; }
+.dh-match-result.win { color: #4ade80; }
+.dh-match-result.loss { color: #f87171; }
+.dh-match-result.draw { color: #fbbf24; }
+
+/* ── Leaderboard ── */
+.dh-leader { padding: 1.25rem 1.25rem 1rem; }
+.dh-lb-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.dh-lb-row:last-child { border-bottom: none; }
+.dh-lb-rank { width: 18px; font-size: 11px; font-weight: 800; color: rgba(255,255,255,0.35); text-align: center; }
+.dh-lb-avatar { width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.3); }
+.dh-lb-name { flex: 1; font-size: 12px; font-weight: 600; color: #c8c0d8; }
+.dh-lb-elo { font-size: 13px; font-weight: 900; color: #c084fc; }
+
+/* ── Responsive ── */
+@media (max-width: 1100px) {
+  .dh-bottom-row-v2 { flex-direction: column; }
+  .dh-right-col { width: 100%; flex-direction: row; }
+  .dh-right-col .glass-card { flex: 1; }
 }
 @media (max-width: 768px) {
   .dh-top-row { flex-direction: column; }
