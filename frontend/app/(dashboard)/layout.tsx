@@ -2,11 +2,10 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Home,
   Swords,
-  BrainCircuit,
   Trophy,
   History,
   Settings,
@@ -34,6 +33,7 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
   const router = useRouter();
   const { openProfile, profile, loadProfile } = useProfileStore();
   const { openChat } = useChatStore();
@@ -41,24 +41,20 @@ export default function DashboardLayout({
   const pendingCount = useFriendStore((s) => s.pendingRequests.length);
   const { loadPendingRequests } = useFriendStore();
 
-  // Use state to avoid SSR/client hydration mismatch (localStorage only available client-side)
   const [clientUser, setClientUser] = useState<ReturnType<typeof getUser>>(null);
 
-  // Initialize friend chat socket connection for the whole dashboard session
   useFriendChat({
     userId: clientUser?.id ?? '',
     username: clientUser?.username ?? '',
     enabled: !!clientUser?.id,
   });
 
-  // Load profile data on mount from localStorage (client-only)
   useEffect(() => {
     const localUser = getUser();
     setClientUser(localUser);
     if (localUser && !profile) {
       loadProfile();
     }
-    // Load pending requests count for badge
     if (localUser?.id) {
       loadPendingRequests();
     }
@@ -73,6 +69,11 @@ export default function DashboardLayout({
 
   const displayUser = profile ?? clientUser;
 
+  const isActive = (href: string) => {
+    if (href === "/home") return pathname === "/home";
+    return pathname.startsWith(href);
+  };
+
   return (
     <>
       <ProfilePanel />
@@ -82,153 +83,80 @@ export default function DashboardLayout({
       <div className="dashboard-layout">
         {/* Sidebar */}
         <aside className="sidebar">
-          <div>
+          <div className="sidebar-top">
             <div className="logo-container">
               <span className="logo-text">
-                <span className="text-purple">CHESSKY</span>
-                <span>SCRAPPER</span>
+                <span className="text-purple">Chess</span>Skyscraper
               </span>
             </div>
 
-            <div className="sidebar-header">
-              <p className="sidebar-subtitle">The Sanctuary</p>
-              <p className="sidebar-title">
-                <ClientOnly fallback="GRANDMASTER STATUS">
-                  {displayUser ? displayUser.username.toUpperCase() : "GRANDMASTER"} STATUS
-                </ClientOnly>
-              </p>
-            </div>
-
             <nav className="sidebar-nav">
-              <Link href="/home" className="nav-link active">
-                <div className="nav-link-content">
-                  <Home size={18} className="text-purple" />
-                  <span className="nav-text">HOME</span>
-                </div>
-                <div className="active-indicator"></div>
+              <Link href="/home" className={`nav-link ${isActive("/home") ? "active" : ""}`}>
+                <Home size={18} />
+                <span className="nav-text">HOME</span>
               </Link>
 
-              <Link href="/live" className="nav-link" style={{ position: 'relative' }}>
-                <Radio size={18} color="#ef4444" />
+              <Link href="/live" className={`nav-link ${isActive("/live") ? "active" : ""}`} style={{ position: 'relative' }}>
+                <Radio size={18} />
                 <span className="nav-text">LIVE MATCHES</span>
-                <span style={{
-                  position: 'absolute',
-                  top: '6px',
-                  right: '8px',
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  background: '#ef4444',
-                  animation: 'liveBadgePulse 1.5s infinite',
-                }} />
+                <span className="live-dot" />
               </Link>
 
-              <Link href="/analysis" className="nav-link">
-                <BrainCircuit size={18} />
-                <span className="nav-text">NEURAL ANALYSIS</span>
-              </Link>
-
-              <Link href="/ranks" className="nav-link">
+              <Link href="/ranks" className={`nav-link ${isActive("/ranks") ? "active" : ""}`}>
                 <Trophy size={18} />
                 <span className="nav-text">GLOBAL RANKS</span>
               </Link>
 
-              <Link href="/tournaments" className="nav-link">
+              <Link href="/tournaments" className={`nav-link ${isActive("/tournaments") ? "active" : ""}`}>
                 <Swords size={18} />
                 <span className="nav-text">TOURNAMENTS</span>
               </Link>
 
-              <Link href="/archives" className="nav-link">
+              <Link href="/archives" className={`nav-link ${isActive("/archives") ? "active" : ""}`}>
                 <History size={18} />
                 <span className="nav-text">ARCHIVES</span>
               </Link>
 
-              <Link href="/friends" className="nav-link" style={{ position: 'relative' }}>
-                <Users size={18} style={{ color: pendingCount > 0 ? '#a855f7' : undefined }} />
+              <Link href="/friends" className={`nav-link ${isActive("/friends") ? "active" : ""}`} style={{ position: 'relative' }}>
+                <Users size={18} />
                 <span className="nav-text">FRIENDS</span>
                 {pendingCount > 0 && (
-                  <span style={{
-                    position: 'absolute',
-                    top: '6px',
-                    right: '8px',
-                    background: '#ef4444',
-                    color: 'white',
-                    borderRadius: '12px',
-                    padding: '1px 6px',
-                    fontSize: '10px',
-                    fontWeight: 700,
-                    minWidth: '18px',
-                    textAlign: 'center',
-                  }}>
-                    {pendingCount > 9 ? '9+' : pendingCount}
-                  </span>
+                  <span className="nav-badge">{pendingCount > 9 ? '9+' : pendingCount}</span>
                 )}
               </Link>
 
-              <Link href="/play-bot" className="nav-link" style={{ position: 'relative' }}>
-                <Bot size={18} style={{ color: '#a855f7' }} />
+              <Link href="/play-bot" className={`nav-link ${isActive("/play-bot") ? "active" : ""}`} style={{ position: 'relative' }}>
+                <Bot size={18} />
                 <span className="nav-text">PLAY VS BOT</span>
-                <span style={{
-                  position: 'absolute',
-                  top: '6px',
-                  right: '8px',
-                  fontSize: '9px',
-                  fontWeight: 700,
-                  background: 'rgba(168,85,247,0.2)',
-                  color: '#a855f7',
-                  padding: '1px 5px',
-                  borderRadius: '6px',
-                  border: '1px solid rgba(168,85,247,0.3)',
-                }}>AI</span>
+                <span className="nav-ai-tag">AI</span>
               </Link>
 
-              {/* Chat button */}
               <button
                 onClick={() => openChat('', '')}
                 className="nav-link"
-                style={{ width: '100%', background: 'none', border: 'none', color: '#8b7fa8', cursor: 'pointer', textAlign: 'left', position: 'relative' }}
+                style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', position: 'relative' }}
               >
                 <MessageCircle size={18} />
                 <span className="nav-text">MESSAGES</span>
                 {totalUnread > 0 && (
-                  <span style={{
-                    position: 'absolute',
-                    top: '6px',
-                    right: '8px',
-                    background: '#a855f7',
-                    color: 'white',
-                    borderRadius: '12px',
-                    padding: '1px 6px',
-                    fontSize: '10px',
-                    fontWeight: 700,
-                    minWidth: '18px',
-                    textAlign: 'center',
-                  }}>
-                    {totalUnread > 9 ? '9+' : totalUnread}
-                  </span>
+                  <span className="nav-badge-purple">{totalUnread > 9 ? '9+' : totalUnread}</span>
                 )}
               </button>
-
-              <div className="find-match-container">
-                <Link href="/play" className="btn-primary" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
-                  FIND MATCH
-                </Link>
-              </div>
             </nav>
           </div>
 
           <div className="sidebar-footer">
-            <Link href="/settings" className="nav-link">
+            <Link href="/settings" className={`nav-link ${isActive("/settings") ? "active" : ""}`}>
               <Settings size={18} />
               <span className="nav-text">SETTINGS</span>
             </Link>
             <button
               onClick={handleLogout}
               className="nav-link logout-btn"
-              style={{ width: '100%', background: 'none', border: 'none', color: '#8b7fa8', cursor: 'pointer', textAlign: 'left' }}
+              style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
             >
-              <LogOut size={18} color="#ef4444" />
-              <span className="nav-text" style={{ color: '#ef4444' }}>TERMINATE SESSION</span>
+              <LogOut size={18} />
+              <span className="nav-text logout-text">TERMINATE SESSION</span>
             </button>
           </div>
         </aside>
@@ -237,9 +165,8 @@ export default function DashboardLayout({
         <main className="main-area">
           <header className="top-header">
             <nav className="top-nav">
-              <Link href="/home" className="top-nav-item active">SANCTUARY</Link>
-              <span className="top-nav-item">NEURAL ANALYSIS</span>
-              <Link href="/archives" className="top-nav-item">ARCHIVES</Link>
+              <Link href="/home" className={`top-nav-item ${isActive("/home") ? "active" : ""}`}>SANCTUARY</Link>
+              <Link href="/archives" className={`top-nav-item ${isActive("/archives") ? "active" : ""}`}>ARCHIVES</Link>
             </nav>
 
             <div className="header-right">
@@ -255,7 +182,6 @@ export default function DashboardLayout({
                 <span className="bell-indicator"></span>
               </button>
 
-              {/* Avatar: click to open profile panel */}
               <button
                 id="profile-avatar-btn"
                 className="avatar-container avatar-btn"
@@ -281,8 +207,8 @@ export default function DashboardLayout({
 
           <div className="footer-info">
             <span>The Protocol</span>
-            <span>Privacy Void</span>
-            <span>Neural API</span>
+            <span>Privacy</span>
+            <span>Fair Play</span>
             <span>Legals</span>
           </div>
         </main>

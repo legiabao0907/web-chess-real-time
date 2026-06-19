@@ -1076,3 +1076,235 @@
 .chat-send-btn:hover {
   color: #e230ff;
 }
+
+/* ══════════════════════════════════════════════════════════════
+   NEW DASHBOARD HOME STYLES (ChessSkyscraper)
+   ══════════════════════════════════════════════════════════════ */
+
+/* Glass card base */
+.glass-card {
+  background: rgba(18,14,28,0.7);
+  border: 1px solid rgba(140,110,180,0.18);
+  border-radius: 16px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+}
+
+/* Sidebar widened for brand name */
+.sidebar { width: 300px; }
+
+/* Logo text */
+.logo-text { font-size: 1.15rem; white-space: nowrap; }
+
+/* Active nav state - purple glow */
+.nav-link { color: rgba(255,255,255,0.35); transition: all 0.2s; }
+.nav-link:hover { color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.03); }
+.nav-link.active { color: #c084fc; background: rgba(168,85,247,0.1); box-shadow: inset 3px 0 0 #c084fc; }
+.nav-link.active svg { color: #c084fc; }
+
+/* Live dot */
+.live-dot {
+  position: absolute; top: 8px; right: 10px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #ef4444; animation: liveBadgePulse 1.5s infinite;
+}
+@keyframes liveBadgePulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* Badges */
+.nav-badge {
+  position: absolute; top: 6px; right: 8px;
+  background: #ef4444; color: white; border-radius: 12px;
+  padding: 1px 6px; font-size: 10px; font-weight: 700; min-width: 18px; text-align: center;
+}
+.nav-badge-purple {
+  position: absolute; top: 6px; right: 8px;
+  background: #a855f7; color: white; border-radius: 12px;
+  padding: 1px 6px; font-size: 10px; font-weight: 700; min-width: 18px; text-align: center;
+}
+.nav-ai-tag {
+  position: absolute; top: 6px; right: 8px;
+  font-size: 9px; font-weight: 700; background: rgba(168,85,247,0.2);
+  color: #a855f7; padding: 1px 5px; border-radius: 6px;
+  border: 1px solid rgba(168,85,247,0.3);
+}
+
+/* Remove find-match from sidebar */
+.find-match-container { display: none; }
+
+/* Logout text */
+.logout-text { color: #ef4444; }
+.logout-btn:hover { background: rgba(239,68,68,0.08); }
+
+/* Sidebar top/bottom */
+.sidebar-top { display: flex; flex-direction: column; }
+.sidebar-header { display: none; }
+
+/* Top nav */
+.top-nav { gap: 1.5rem; }
+.top-nav-item { color: rgba(255,255,255,0.35); text-decoration: none; }
+.top-nav-item:hover { color: rgba(255,255,255,0.7); }
+.top-nav-item.active { color: #c084fc; border-bottom: 2px solid #c084fc; }
+
+/* ═══ Dashboard Home Layout ═══ */
+.dashboard-home-new {
+  width: 100%; max-width: 1100px; margin: 0 auto;
+  display: flex; flex-direction: column; gap: 1.25rem;
+}
+
+/* Top row: welcome + stats + find match */
+.dh-top-row {
+  display: flex; gap: 1rem; align-items: stretch;
+}
+.dh-welcome {
+  flex: 1; padding: 1.5rem 1.75rem; display: flex; align-items: center;
+}
+.dh-welcome-title {
+  font-size: 1.35rem; font-weight: 900; color: #e8e0f0; letter-spacing: 0.02em; line-height: 1.3;
+}
+.dh-welcome-gradient {
+  background: linear-gradient(135deg, #c084fc, #e879f9);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+.dh-welcome-sub {
+  font-size: 10px; color: rgba(255,255,255,0.4); margin-top: 4px; letter-spacing: 0.05em;
+}
+
+.dh-stats-row { display: flex; gap: 0.75rem; }
+.dh-stat {
+  padding: 1rem 1.25rem; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; min-width: 100px;
+}
+.dh-stat-label { font-size: 9px; color: rgba(255,255,255,0.35); text-transform: uppercase; font-weight: 700; letter-spacing: 0.08em; margin-bottom: 4px; }
+.dh-stat-value { font-size: 1.35rem; font-weight: 800; color: #e8e0f0; }
+.dh-purple { color: #c084fc !important; }
+.dh-stat-streak { display: flex; align-items: center; gap: 4px; }
+
+/* FIND MATCH button - prominent */
+.dh-find-match {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 1rem 1.5rem; text-decoration: none;
+  background: linear-gradient(135deg, #c084fc, #a855f7) !important;
+  border: none !important;
+  color: white; font-weight: 900; font-size: 13px; letter-spacing: 0.1em;
+  box-shadow: 0 0 30px rgba(168,85,247,0.4); min-width: 130px;
+  transition: transform 0.15s, box-shadow 0.2s; cursor: pointer;
+}
+.dh-find-match:hover { transform: scale(1.03); box-shadow: 0 0 40px rgba(168,85,247,0.6); }
+
+/* Section cards */
+.dh-section { padding: 1.25rem 1.5rem; }
+.dh-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.dh-section-title { font-size: 10px; color: rgba(255,255,255,0.5); font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.dh-section-link { font-size: 10px; color: #c084fc; cursor: pointer; border-bottom: 1px solid rgba(192,132,252,0.3); padding-bottom: 2px; }
+
+/* Games grid */
+.dh-games-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.dh-game-card {
+  display: flex; gap: 1rem; padding: 1rem;
+  background: rgba(255,255,255,0.02); border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.04);
+}
+.dh-game-thumb { width: 80px; height: 80px; flex-shrink: 0; }
+.dh-game-info { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+.dh-game-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.dh-turn-badge { padding: 2px 8px; font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; border-radius: 5px; }
+.dh-turn-badge.yours { background: rgba(192,132,252,0.2); color: #c084fc; }
+.dh-turn-badge.opponents { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.45); }
+.dh-game-clock { font-size: 12px; color: rgba(255,255,255,0.5); font-weight: 600; }
+.dh-game-opponent { font-size: 14px; font-weight: 700; color: #e8e0f0; margin-bottom: 2px; }
+.dh-game-status { display: flex; align-items: center; gap: 6px; font-size: 11px; color: rgba(255,255,255,0.4); }
+.dh-status-dot { width: 6px; height: 6px; border-radius: 50%; }
+.dh-status-dot.yours { background: #c084fc; }
+.dh-status-dot.opponents { background: rgba(255,255,255,0.3); }
+
+/* Mini chessboard */
+.mini-board { display: grid; grid-template-columns: repeat(8, 1fr); width: 80px; height: 80px; border-radius: 4px; overflow: hidden; border: 1px solid rgba(255,255,255,0.08); }
+.mini-sq { display: flex; align-items: center; justify-content: center; width: 10px; height: 10px; }
+.mini-sq.light { background: #c8a8e0; }
+.mini-sq.dark { background: #5c3d6e; }
+.mini-piece { font-size: 9px; line-height: 1; }
+
+/* Bottom row */
+.dh-bottom-row { display: flex; gap: 1.25rem; align-items: flex-start; }
+
+/* ELO card */
+.dh-elo-card { flex: 1; padding: 1.25rem 1.5rem; min-width: 0; }
+.dh-elo-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; }
+.dh-elo-title { font-size: 10px; color: rgba(255,255,255,0.5); font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 4px; }
+.dh-elo-value-row { display: flex; align-items: baseline; gap: 8px; }
+.dh-elo-gain { font-size: 1.5rem; font-weight: 900; color: #c084fc; }
+.dh-elo-period { font-size: 10px; color: rgba(255,255,255,0.35); }
+.dh-elo-filters { display: flex; gap: 4px; }
+.dh-filter-btn {
+  padding: 4px 12px; border-radius: 6px; font-size: 10px; font-weight: 700;
+  background: transparent; border: 1px solid rgba(255,255,255,0.08); color: rgba(255,255,255,0.35); cursor: pointer;
+}
+.dh-filter-btn.active { background: rgba(192,132,252,0.15); border-color: rgba(192,132,252,0.3); color: #c084fc; }
+.dh-elo-chart { display: flex; gap: 6px; }
+.dh-elo-yaxis { display: flex; flex-direction: column; justify-content: space-between; padding: 0 4px 18px 4px; }
+.dh-elo-yaxis span { font-size: 9px; color: rgba(255,255,255,0.25); text-align: right; }
+.dh-elo-chart-area { flex: 1; min-height: 100px; }
+.dh-svg-chart { width: 100%; height: 100%; }
+.dh-chart-label { font-size: 9px; fill: rgba(255,255,255,0.25); }
+
+/* Side panel */
+.dh-side-panel { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; gap: 1rem; }
+
+/* Puzzle */
+.dh-puzzle { padding: 1.25rem; }
+.dh-puzzle-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+.dh-puzzle-title { font-size: 10px; color: rgba(255,255,255,0.5); font-weight: 700; letter-spacing: 0.12em; }
+.dh-puzzle-badge {
+  font-size: 9px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+  background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.25);
+}
+.dh-puzzle-board { width: 100%; margin-bottom: 0.75rem; }
+.dh-puzzle-board .mini-board { width: 100%; height: auto; aspect-ratio: 1; }
+.dh-puzzle-board .mini-sq { width: 100%; height: auto; aspect-ratio: 1; }
+.dh-puzzle-board .mini-piece { font-size: clamp(10px, 2.5vw, 18px); }
+.dh-puzzle-info { display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; color: #e8e0f0; margin-bottom: 0.75rem; }
+.dh-puzzle-side { color: rgba(255,255,255,0.4); }
+.dh-btn-secondary {
+  width: 100%; padding: 10px; border-radius: 10px; font-size: 11px; font-weight: 700;
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); color: rgba(255,255,255,0.6); cursor: pointer;
+  transition: all 0.2s;
+}
+.dh-btn-secondary:hover { background: rgba(255,255,255,0.1); color: white; }
+
+/* Chat */
+.dh-chat { padding: 1.25rem; display: flex; flex-direction: column; flex: 1; min-height: 320px; }
+.dh-chat-header { margin-bottom: 1rem; }
+.dh-chat-title-row { display: flex; justify-content: space-between; align-items: center; }
+.dh-chat-title { font-size: 10px; color: rgba(255,255,255,0.5); font-weight: 700; letter-spacing: 0.12em; }
+.dh-chat-online { display: flex; align-items: center; gap: 6px; font-size: 10px; color: rgba(255,255,255,0.4); }
+.dh-chat-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; }
+.dh-chat-msgs { flex: 1; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; margin-bottom: 1rem; }
+.dh-chat-msg { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.dh-chat-user { font-size: 11px; font-weight: 700; color: #c084fc; }
+.dh-chat-time { font-size: 9px; color: rgba(255,255,255,0.2); }
+.dh-chat-text { width: 100%; font-size: 11px; color: rgba(255,255,255,0.55); line-height: 1.5; margin: 0; }
+.dh-chat-input-row { display: flex; gap: 8px; }
+.dh-chat-input {
+  flex: 1; padding: 10px 14px; border-radius: 10px; font-size: 11px;
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+  color: white; outline: none;
+}
+.dh-chat-input::placeholder { color: rgba(255,255,255,0.2); }
+.dh-chat-send {
+  padding: 10px; border-radius: 10px; background: rgba(192,132,252,0.15); border: 1px solid rgba(192,132,252,0.2);
+  color: #c084fc; cursor: pointer; transition: all 0.2s;
+}
+.dh-chat-send:hover { background: rgba(192,132,252,0.25); }
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .dh-bottom-row { flex-direction: column; }
+  .dh-side-panel { width: 100%; flex-direction: row; }
+  .dh-side-panel .glass-card { flex: 1; }
+}
+@media (max-width: 768px) {
+  .dh-top-row { flex-direction: column; }
+  .dh-stats-row { flex-wrap: wrap; }
+  .dh-games-grid { grid-template-columns: 1fr; }
+}
