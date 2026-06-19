@@ -29,6 +29,8 @@ export interface MakeMoveDto {
     to: string;
     promotion?: string;
   };
+  /** True if this move was a premove (queued before the player's turn). Server deducts 100ms instead of full elapsed time. */
+  premove?: boolean;
 }
 
 export interface CreateGameDto {

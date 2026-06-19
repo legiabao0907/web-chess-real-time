@@ -6,7 +6,7 @@ const Chessboard: any = dynamic(
   () => import("react-chessboard").then((mod) => mod.Chessboard as any),
   { ssr: false }
 );
-import { Chess } from "chess.js";
+import { Chess, Square } from "chess.js";
 import { Flag, Handshake, MessageSquare, Search, X, Send, ChevronLeft, ChevronRight, SkipBack, SkipForward, BarChart3, Swords } from "lucide-react";
 import "./play.css";
 import { useChessSocket } from "@/hooks/useChessSocket";
@@ -15,6 +15,9 @@ import { useSearchParams } from "next/navigation";
 import { useChatStore } from "@/store/useChatStore";
 import OpponentProfilePopup from "@/components/chess/OpponentProfilePopup";
 import EvaluationBar from "@/components/chess/EvaluationBar";
+
+// ─── Premove types ──────────────────────────────────────────────────────
+type Premove = { from: Square; to: Square; promotion?: string } | null;
 
 function PlayPageContent() {
   const searchParams = useSearchParams();
@@ -45,6 +48,15 @@ function PlayPageContent() {
   const [whiteClock, setWhiteClock] = useState(0);
   const [blackClock, setBlackClock] = useState(0);
 
+  // ─── Click-to-move state ────────────────────────────────────────────
+  const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
+  // Legal moves from selected piece (for highlighting)
+  const [legalMoves, setLegalMoves] = useState<Square[]>([]);
+
+  // ─── Premove state ──────────────────────────────────────────────────
+  const [premove, setPremove] = useState<Premove>(null);
+  const premoveRef = useRef<Premove>(null); // ref for latest premove in event handlers
+
   const localGame = useMemo(() => new Chess(), []);
 
   useEffect(() => {
@@ -72,6 +84,14 @@ function PlayPageContent() {
       localGame.load(game.fen);
       setViewIndex(-1);
       setViewFen(null);
+      // Clear selection & premove when game state updates from server
+      setSelectedSquare(null);
+      setLegalMoves([]);
+      // Clear premove when game is no longer active
+      if (game.status !== "active") {
+        setPremove(null);
+        premoveRef.current = null;
+      }
       // Auto-analyze if enabled
       if (analysisEnabled) {
         if (analysisTimerRef.current) clearTimeout(analysisTimerRef.current);
@@ -194,16 +214,143 @@ function PlayPageContent() {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendMessage(); }
   };
 
+  // ── Premove execution: when opponent's move arrives, check & fire stored premove ──
+  const executePremove = useCallback((currentGame: typeof game) => {
+    const p = premoveRef.current;
+    if (!p || !currentGame || currentGame.status !== "active") return;
+    // Only execute if it's now our turn
+    const isPlayerTurn = (currentGame.turn === "w" && currentGame.whiteId === user?.id) ||
+                         (currentGame.turn === "b" && currentGame.blackId === user?.id);
+    if (!isPlayerTurn) return;
+
+    // Validate premove is still legal
+    try {
+      const chess = new Chess(currentGame.fen);
+      const move = chess.move({ from: p.from, to: p.to, promotion: p.promotion ?? "q" });
+      if (move) {
+        // Premove is legal — send to server with premove flag
+        actions.makeMove(currentGame.gameId, { from: p.from, to: p.to, promotion: p.promotion }, true);
+      }
+    } catch { /* illegal premove after opponent's move — discard silently */ }
+    // Clear premove regardless (even if illegal after opponent's move)
+    setPremove(null);
+    premoveRef.current = null;
+  }, [user?.id, actions]);
+
+  // ── Watch for opponent's move to trigger premove ──
+  const prevTurnRef = useRef(game?.turn);
+  useEffect(() => {
+    if (!game || !user) return;
+    const prevTurn = prevTurnRef.current;
+    prevTurnRef.current = game.turn;
+    // If turn changed to ours, try executing premove
+    const isNowMyTurn = (game.turn === "w" && game.whiteId === user.id) ||
+                        (game.turn === "b" && game.blackId === user.id);
+    if (isNowMyTurn && prevTurn && prevTurn !== game.turn) {
+      executePremove(game);
+    }
+  }, [game?.turn, game?.whiteId, game?.blackId, user?.id, executePremove]);
+
+  // ── Click-to-move: select a piece ────────────────────────────────────
+  function onPieceClick(piece: string) {
+    if (!user || !game || game.status !== "active") return;
+    if (viewIndex !== -1) return;
+    const isMyTurn = (game.turn === "w" && game.whiteId === user.id) || (game.turn === "b" && game.blackId === user.id);
+
+    // Extract square from piece (format: "wP", "bK", etc.)
+    const boardPos = getBoardPosition(game.fen);
+    const square = findPieceSquare(boardPos, piece);
+    if (!square) { setSelectedSquare(null); setLegalMoves([]); return; }
+
+    // Only allow selecting own pieces
+    const pieceColor = piece[0]; // "w" or "b"
+    const myColor = isPlayerWhite ? "w" : "b";
+    if (pieceColor !== myColor) { setSelectedSquare(null); setLegalMoves([]); return; }
+
+    if (selectedSquare === square) {
+      setSelectedSquare(null);
+      setLegalMoves([]);
+    } else {
+      setSelectedSquare(square);
+      try {
+        const chess = new Chess(game.fen);
+        const moves = chess.moves({ square: square, verbose: true });
+        setLegalMoves(moves.map((m: any) => m.to as Square));
+      } catch { setLegalMoves([]); }
+    }
+  }
+
+  // ── Click-to-move: select destination ────────────────────────────────
+  function onSquareClick(square: Square) {
+    if (!user || !game || game.status !== "active") return;
+    if (viewIndex !== -1) return;
+    const isMyTurn = (game.turn === "w" && game.whiteId === user.id) || (game.turn === "b" && game.blackId === user.id);
+
+    if (selectedSquare) {
+      if (isMyTurn) {
+        // Regular move
+        const promotion = (() => {
+          const piece = getPieceAt(game.fen, selectedSquare);
+          if (piece && piece.toLowerCase() === (isPlayerWhite ? 'p' : 'p')) {
+            const targetRank = square[1];
+            if (targetRank === '8' || targetRank === '1') return 'q';
+          }
+          return undefined;
+        })();
+        try {
+          const chess = new Chess(game.fen);
+          const move = chess.move({ from: selectedSquare, to: square, promotion: promotion ?? "q" });
+          if (move) {
+            actions.makeMove(game.gameId, { from: selectedSquare, to: square, promotion });
+            setSelectedSquare(null);
+            setLegalMoves([]);
+            setPremove(null);
+            premoveRef.current = null;
+            return;
+          }
+        } catch { /* illegal — fall through */ }
+      } else {
+        // Not our turn — set premove via click
+        const p: Premove = { from: selectedSquare, to: square, promotion: "q" };
+        setPremove(p);
+        premoveRef.current = p;
+        setSelectedSquare(null);
+        setLegalMoves([]);
+        return;
+      }
+    }
+
+    setSelectedSquare(null);
+    setLegalMoves([]);
+  }
+
+  // ── Drag-drop move handler (also called by library for premove execution) ──
   function onDrop(sourceSquare: any, targetSquare: any, piece: any) {
     if (!user || !game || game.status !== "active") return false;
-    if (viewIndex !== -1) return false; // Don't allow moves when reviewing history
+    if (viewIndex !== -1) return false;
     const isMyTurn = (game.turn === "w" && game.whiteId === user.id) || (game.turn === "b" && game.blackId === user.id);
-    if (!isMyTurn || !targetSquare) return false;
+    if (!targetSquare) return false;
     const promotion = (typeof piece === "string" ? piece[1] : "q")?.toLowerCase() ?? "q";
+
+    if (!isMyTurn) {
+      // NOT our turn → this is a PREMOVE (library handles visual indicator)
+      const p: Premove = { from: sourceSquare as Square, to: targetSquare as Square, promotion };
+      setPremove(p);
+      premoveRef.current = p;
+      // Don't send to server — wait for opponent's move
+      return true; // Allow library to show premove indicator
+    }
+
+    // Our turn → regular move
     try {
       const move = localGame.move({ from: sourceSquare, to: targetSquare, promotion });
       if (!move) return false;
-      actions.makeMove(game.gameId, { from: sourceSquare, to: targetSquare, promotion });
+      actions.makeMove(game.gameId, { from: sourceSquare, to: targetSquare, promotion }, false);
+      // Clear any stale premove
+      setPremove(null);
+      premoveRef.current = null;
+      setSelectedSquare(null);
+      setLegalMoves([]);
       return true;
     } catch { return false; }
   }
@@ -215,6 +362,38 @@ function PlayPageContent() {
 
   const formatChatTime = (ts: number) =>
     new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+  // ─── Helper: parse FEN to get piece at a square ──────────────────────
+  function getBoardPosition(fen: string): Record<string, string> {
+    const result: Record<string, string> = {};
+    const [rows] = fen.split(" ");
+    const ranks = rows.split("/");
+    const files = "abcdefgh";
+    for (let rankIdx = 0; rankIdx < 8; rankIdx++) {
+      let fileIdx = 0;
+      for (const ch of ranks[rankIdx]) {
+        if (ch >= "1" && ch <= "8") { fileIdx += parseInt(ch); }
+        else { const sq = files[fileIdx] + (8 - rankIdx); result[sq] = ch; fileIdx++; }
+      }
+    }
+    return result;
+  }
+
+  function findPieceSquare(boardPos: Record<string, string>, piece: string): Square | null {
+    // piece format: "wP", "bK" etc. In FEN: "P" = white pawn, "p" = black pawn
+    const color = piece[0]; // "w" or "b"
+    const type = piece[1]; // "P", "N", "B", "R", "Q", "K"
+    const fenChar = color === "w" ? type.toUpperCase() : type.toLowerCase();
+    for (const [sq, p] of Object.entries(boardPos)) {
+      if (p === fenChar) return sq as Square;
+    }
+    return null;
+  }
+
+  function getPieceAt(fen: string, square: Square): string | null {
+    const pos = getBoardPosition(fen);
+    return pos[square] ?? null;
+  }
 
   if (!mounted) return null;
   if (!user) return (
@@ -420,6 +599,22 @@ function PlayPageContent() {
 
         {/* Board */}
         <div className="board-wrapper p-4 relative flex-1 flex gap-3 justify-center items-center">
+          {/* Premove indicator */}
+          {premove && (
+            <div style={{
+              position: "absolute", top: "10px", left: "50%", transform: "translateX(-50%)", zIndex: 15,
+              background: "rgba(34,197,94,0.2)", backdropFilter: "blur(4px)",
+              border: "1px solid rgba(34,197,94,0.5)", borderRadius: "8px",
+              padding: "4px 12px", color: "#4ade80", fontSize: "12px", fontWeight: 700,
+              display: "flex", alignItems: "center", gap: "6px",
+            }}>
+              <span>⚡</span> Premove: {premove.from}→{premove.to}
+              <button onClick={() => { setPremove(null); premoveRef.current = null; }}
+                style={{ marginLeft: "4px", background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: "14px", lineHeight: 1 }}>
+                ✕
+              </button>
+            </div>
+          )}
           {/* Evaluation Bar */}
           {analysisEnabled && analysis && (
             <EvaluationBar
@@ -435,11 +630,30 @@ function PlayPageContent() {
           <div className={`w-full max-w-[580px] max-h-[580px] aspect-square relative`}>
             {typeof window !== "undefined" && (
               <Chessboard
+                id="playBoard"
                 position={displayFen}
                 onPieceDrop={isReviewing ? () => false : onDrop}
+                onPieceClick={isReviewing ? undefined : onPieceClick}
+                onSquareClick={isReviewing ? undefined : onSquareClick}
                 animationDuration={150}
                 boardOrientation={!isPlayerWhite ? "black" : "white"}
                 arePiecesDraggable={!isReviewing && game?.status === "active"}
+                arePremovesAllowed={!isReviewing && game?.status === "active"}
+                customPremoveDarkSquareStyle={{ backgroundColor: "rgba(34,197,94,0.45)" }}
+                customPremoveLightSquareStyle={{ backgroundColor: "rgba(34,197,94,0.55)" }}
+                customSquareStyles={{
+                  // Highlight selected square
+                  ...(selectedSquare ? { [selectedSquare]: { backgroundColor: "rgba(255,255,50,0.5)", borderRadius: "2px" } } : {}),
+                  // Highlight legal move squares
+                  ...Object.fromEntries(legalMoves.map(sq => [sq, {
+                    background: "radial-gradient(circle, rgba(0,0,0,0.35) 20%, transparent 25%)",
+                    borderRadius: "50%",
+                  }])),
+                }}
+                customDarkSquareStyle={{ backgroundColor: "#7e22ce" }}
+                customLightSquareStyle={{ backgroundColor: "#f3e8ff" }}
+                customDropSquareStyle={{ boxShadow: 'inset 0 0 1px 6px rgba(236,72,153,0.75)' }}
+                clearPremovesOnRightClick={true}
               />
             )}
 

@@ -279,8 +279,8 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
   );
 
   const makeMove = useCallback(
-    (gameId: string, move: { from: string; to: string; promotion?: string }) => {
-      socketRef.current?.emit("make_move", { gameId, userId, move });
+    (gameId: string, move: { from: string; to: string; promotion?: string }, premove = false) => {
+      socketRef.current?.emit("make_move", { gameId, userId, move, premove });
     },
     [userId]
   );

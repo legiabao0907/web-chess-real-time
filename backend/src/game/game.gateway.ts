@@ -479,9 +479,9 @@ export class GameGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() data: MakeMoveDto,
   ) {
-    const { gameId, userId, move } = data;
+    const { gameId, userId, move, premove = false } = data;
 
-    const result = await this.gameService.processMove(gameId, userId, move);
+    const result = await this.gameService.processMove(gameId, userId, move, premove);
 
     if (!result.success || !result.game) {
       client.emit('move_error', { error: result.error ?? 'Invalid move' });

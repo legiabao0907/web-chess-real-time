@@ -389,6 +389,7 @@ export class GameService implements OnModuleInit {
     gameId: string,
     userId: string,
     move: { from: string; to: string; promotion?: string },
+    premove: boolean = false,
   ): Promise<{ success: boolean; game?: GameState; error?: string }> {
     const game = await this.getGame(gameId);
     if (!game) return { success: false, error: 'Game not found' };
@@ -416,22 +417,22 @@ export class GameService implements OnModuleInit {
     const movingIsBot = isBot; // bot is making this move
 
     if (!movingIsBot) {
-      // Only deduct time for human moves
+      // Premove: deduct exactly 100ms (0.1s) instead of full elapsed time
+      const timePenalty = premove ? 100 : elapsed;
+
       if (isWhiteTurn) {
-        game.whiteTimeMs = Math.max(0, game.whiteTimeMs - elapsed) + tc.incrementMs;
+        game.whiteTimeMs = Math.max(0, game.whiteTimeMs - timePenalty) + tc.incrementMs;
         if (game.whiteTimeMs <= 0) {
           game.whiteTimeMs = 0;
           game.status = 'finished';
           game.winner = 'black';
-          // Fall through — gateway will see status !== 'active' and handle game over
         }
       } else {
-        game.blackTimeMs = Math.max(0, game.blackTimeMs - elapsed) + tc.incrementMs;
+        game.blackTimeMs = Math.max(0, game.blackTimeMs - timePenalty) + tc.incrementMs;
         if (game.blackTimeMs <= 0) {
           game.blackTimeMs = 0;
           game.status = 'finished';
           game.winner = 'white';
-          // Fall through — gateway will see status !== 'active' and handle game over
         }
       }
     }
