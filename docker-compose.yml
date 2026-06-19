@@ -4,17 +4,17 @@ services:
     container_name: chess_postgres
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT}:5432"
     environment:
-      POSTGRES_DB: testnest
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - chess-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d testnest"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -24,14 +24,14 @@ services:
     container_name: chess_redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes --requirepass chessredis2024
+      - "${REDIS_HOST_PORT}:6379"
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
     networks:
       - chess-network
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "chessredis2024", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -43,18 +43,18 @@ services:
     container_name: chess_backend
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "${BACKEND_HOST_PORT}:8080"
     environment:
-      - DATABASE_URL=postgres://postgres:admin@postgres:5432/testnest
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=chessredis2024
-      - JWT_ACCESS_SECRET=obsidian_ultra_access_secret_key_change_in_prod
-      - JWT_REFRESH_SECRET=obsidian_ultra_refresh_secret_key_change_in_prod
-      - JWT_ACCESS_EXPIRES_IN=15m
-      - JWT_REFRESH_EXPIRES_IN=7d
-      - FRONTEND_URL=http://localhost:3000
-      - PORT=8080
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - JWT_ACCESS_EXPIRES_IN=${JWT_ACCESS_EXPIRES_IN}
+      - JWT_REFRESH_EXPIRES_IN=${JWT_REFRESH_EXPIRES_IN}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - PORT=${PORT}
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,15 +68,15 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:8080/api
-        NEXT_PUBLIC_BACKEND_URL: http://localhost:8080
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL}
     container_name: chess_frontend
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${FRONTEND_HOST_PORT}:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8080/api
-      - NEXT_PUBLIC_BACKEND_URL=http://localhost:8080
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+      - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL}
     depends_on:
       - backend
     networks:

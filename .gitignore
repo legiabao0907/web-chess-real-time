@@ -1,2 +1,5 @@
 # Claude AI rules (local only, not for GitHub)
 .claude/
+
+# Environment variables (contains secrets)
+.env
