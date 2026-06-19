@@ -111,7 +111,8 @@ export function useChessSocket({ userId, username }: UseChessSocketOptions) {
     if (!userId) return;
 
     const socket = io(`${SOCKET_URL}/chess`, {
-      transports: ["websocket", "polling"],
+      transports: ["polling", "websocket"],
+      upgrade: false,
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,

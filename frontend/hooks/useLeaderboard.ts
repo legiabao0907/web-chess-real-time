@@ -40,7 +40,8 @@ export function useLeaderboard() {
 
   useEffect(() => {
     const socket = io(`${SOCKET_URL}/leaderboard`, {
-      transports: ["websocket", "polling"],
+      transports: ["polling", "websocket"],
+      upgrade: false,
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,

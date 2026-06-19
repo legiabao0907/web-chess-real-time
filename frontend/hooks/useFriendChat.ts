@@ -30,7 +30,8 @@ export function useFriendChat({ userId, username, enabled = true }: UseFriendCha
     if (!userId || !enabled) return;
 
     const socket = io(`${SOCKET_URL}/chat`, {
-      transports: ["websocket", "polling"],
+      transports: ["polling", "websocket"],
+      upgrade: false,
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
