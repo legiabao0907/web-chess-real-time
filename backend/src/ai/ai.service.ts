@@ -92,15 +92,30 @@ const DEPTH_MAP: Record<Difficulty, number> = {
   hard: 5,
 };
 
+// Time limits (milliseconds) per difficulty for iterative deepening
+const TIME_LIMIT_MAP: Record<Difficulty, number> = {
+  easy: 500,
+  medium: 1500,
+  hard: 3500,
+};
+
+// Max nodes per search (safety net)
+const MAX_NODES = 5_000_000;
+
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
+  private nodesSearched = 0;
+  private searchStartTime = 0;
+  private timeLimit = 0;
+  private timedOut = false;
 
   // ─── Public API ────────────────────────────────────────────────────────────
 
   /**
-   * Calculate the best move for the current position.
-   * Returns move in {from, to, promotion} shape.
+   * Calculate the best move using iterative deepening with time limit.
+   * Searches depth 1→maxDepth, stopping if time budget exceeded.
+   * Falls back to the best move from the last completed depth.
    */
   getBestMove(
     fen: string,
@@ -109,36 +124,65 @@ export class AiService {
   ): { from: string; to: string; promotion?: string } | null {
     const chess = new Chess(fen);
 
-    // Easy: 30% chance of random move
+    // Easy: 35% chance of random move
     if (difficulty === 'easy' && Math.random() < 0.35) {
       return this.getRandomMove(chess);
     }
 
-    const depth = DEPTH_MAP[difficulty];
+    const maxDepth = DEPTH_MAP[difficulty];
+    this.timeLimit = TIME_LIMIT_MAP[difficulty];
+    this.searchStartTime = Date.now();
+    this.nodesSearched = 0;
+    this.timedOut = false;
+
     const maximizing = botColor === 'w';
+    const allMoves = this.orderMoves(chess.moves({ verbose: true }) as Move[], chess);
 
-    let bestMove: Move | null = null;
-    let bestScore = maximizing ? -Infinity : Infinity;
-    let alpha = -Infinity;
-    let beta = Infinity;
+    if (allMoves.length === 0) return null;
+    if (allMoves.length === 1) {
+      return { from: allMoves[0].from, to: allMoves[0].to, promotion: allMoves[0].promotion };
+    }
 
-    const moves = this.orderMoves(chess.moves({ verbose: true }) as Move[], chess);
+    // Iterative deepening: try each depth, keep best move from deepest completed
+    let bestMove: Move = allMoves[0];
+    let completedDepth = 0;
 
-    for (const move of moves) {
-      chess.move(move);
-      const score = this.minimax(chess, depth - 1, alpha, beta, !maximizing);
-      chess.undo();
+    for (let currentDepth = 1; currentDepth <= maxDepth; currentDepth++) {
+      if (this.timedOut) break;
 
-      if (maximizing) {
-        if (score > bestScore) { bestScore = score; bestMove = move; }
-        alpha = Math.max(alpha, bestScore);
-      } else {
-        if (score < bestScore) { bestScore = score; bestMove = move; }
-        beta = Math.min(beta, bestScore);
+      let bestScore = maximizing ? -Infinity : Infinity;
+      let currentBestMove: Move | null = null;
+      let alpha = -Infinity;
+      let beta = Infinity;
+
+      for (const move of allMoves) {
+        if (this.timedOut) break;
+        if (this.nodesSearched > MAX_NODES) { this.timedOut = true; break; }
+
+        chess.move(move);
+        const score = this.minimax(chess, currentDepth - 1, alpha, beta, !maximizing);
+        chess.undo();
+
+        if (maximizing) {
+          if (score > bestScore) { bestScore = score; currentBestMove = move; }
+          alpha = Math.max(alpha, bestScore);
+        } else {
+          if (score < bestScore) { bestScore = score; currentBestMove = move; }
+          beta = Math.min(beta, bestScore);
+        }
+      }
+
+      if (!this.timedOut && currentBestMove) {
+        bestMove = currentBestMove;
+        completedDepth = currentDepth;
       }
     }
 
-    if (!bestMove) return null;
+    this.logger.log(
+      `Bot (${difficulty}) chose move after depth ${completedDepth}/${maxDepth}, ` +
+      `${this.nodesSearched} nodes, ${Date.now() - this.searchStartTime}ms`,
+    );
+
     return {
       from: bestMove.from,
       to: bestMove.to,
@@ -169,47 +213,75 @@ export class AiService {
     beta: number,
     maximizing: boolean,
   ): number {
+    this.nodesSearched++;
+
+    // Timeout / node limit checks
+    if (this.nodesSearched % 10000 === 0) {
+      if (Date.now() - this.searchStartTime > this.timeLimit) {
+        this.timedOut = true;
+      }
+      if (this.nodesSearched > MAX_NODES) {
+        this.timedOut = true;
+      }
+    }
+    if (this.timedOut) return maximizing ? -99999 : 99999;
+
     if (depth === 0 || chess.isGameOver()) {
-      return this.quiescence(chess, alpha, beta, maximizing);
+      return this.quiescence(chess, alpha, beta, maximizing, 2);
     }
 
     const moves = this.orderMoves(chess.moves({ verbose: true }) as Move[], chess);
 
+    // No legal moves = checkmate or stalemate
+    if (moves.length === 0) {
+      if (chess.isCheck()) return maximizing ? -99999 + (5 - depth) : 99999 - (5 - depth);
+      return 0; // stalemate
+    }
+
     if (maximizing) {
       let maxEval = -Infinity;
       for (const move of moves) {
+        if (this.timedOut) break;
         chess.move(move);
         const evalScore = this.minimax(chess, depth - 1, alpha, beta, false);
         chess.undo();
         maxEval = Math.max(maxEval, evalScore);
         alpha = Math.max(alpha, evalScore);
-        if (beta <= alpha) break; // β cut-off
+        if (beta <= alpha) break;
       }
       return maxEval;
     } else {
       let minEval = Infinity;
       for (const move of moves) {
+        if (this.timedOut) break;
         chess.move(move);
         const evalScore = this.minimax(chess, depth - 1, alpha, beta, true);
         chess.undo();
         minEval = Math.min(minEval, evalScore);
         beta = Math.min(beta, evalScore);
-        if (beta <= alpha) break; // α cut-off
+        if (beta <= alpha) break;
       }
       return minEval;
     }
   }
 
   /**
-   * Quiescence search: continue searching captures to avoid horizon effect.
+   * Quiescence search: shallow search for captures to avoid horizon effect.
+   * Reduced from depth 3→2 to keep performance under control.
    */
   private quiescence(
     chess: Chess,
     alpha: number,
     beta: number,
     maximizing: boolean,
-    depth = 3,
+    depth = 2,
   ): number {
+    this.nodesSearched++;
+    if (this.nodesSearched % 5000 === 0 && Date.now() - this.searchStartTime > this.timeLimit) {
+      this.timedOut = true;
+    }
+    if (this.timedOut) return maximizing ? -99999 : 99999;
+
     const standPat = this.evaluate(chess);
 
     if (chess.isGameOver()) {
@@ -228,10 +300,11 @@ export class AiService {
     }
 
     const captures = (chess.moves({ verbose: true }) as Move[]).filter(
-      (m) => m.captured || m.flags.includes('e'), // captures + en-passant
+      (m) => m.captured || m.flags.includes('e'),
     );
 
     for (const move of captures) {
+      if (this.timedOut) break;
       chess.move(move);
       const score = this.quiescence(chess, alpha, beta, !maximizing, depth - 1);
       chess.undo();
