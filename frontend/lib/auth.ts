@@ -69,13 +69,36 @@ export function saveTokens(tokens: AuthTokens): void {
 /**
  * Lưu tokens vào httpOnly cookie thông qua Next.js route handler.
  * Middleware sẽ đọc cookie này để bảo vệ route dashboard.
+ *
+ * 🔥 QUAN TRỌNG: Khi chạy sau Nginx reverse proxy, Nginx thường route tất cả
+ *    /api/* sang NestJS backend. Nếu vậy, Next.js route handler này sẽ KHÔNG
+ *    được gọi. Đó là lý do NestJS auth controller đã được sửa để TỰ set cookie
+ *    trong response login/register — cookie sẽ đến từ NestJS thay vì Next.js.
+ *
+ *    Hàm này vẫn được gọi như một fallback an toàn (khi truy cập trực tiếp
+ *    không qua Nginx). Nếu thất bại, login vẫn hoạt động nhờ NestJS cookie.
  */
 export async function persistCookies(tokens: AuthTokens): Promise<void> {
-  await fetch('/api/auth/set-cookie', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(tokens),
-  });
+  try {
+    const res = await fetch('/api/auth/set-cookie', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(tokens),
+    });
+    if (!res.ok) {
+      console.warn(
+        '⚠️ set-cookie route returned non-OK (likely Nginx routing /api to NestJS). ' +
+        'Cookies should already be set by NestJS auth response.'
+      );
+    }
+  } catch (err) {
+    // Không throw — đây là fallback, cookie chính đã được NestJS set
+    console.warn(
+      '⚠️ Could not reach /api/auth/set-cookie (likely proxied to NestJS by Nginx). ' +
+      'Cookies from NestJS auth response should already be in place.',
+      (err as Error).message
+    );
+  }
 }
 
 /** Xoá cookie khi logout */

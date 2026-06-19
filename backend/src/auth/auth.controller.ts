@@ -4,7 +4,9 @@ import {
   Body,
   HttpCode,
   HttpStatus,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -15,21 +17,75 @@ export class AuthController {
 
   // POST /auth/register
   @Post('register')
-  async register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto);
+  async register(
+    @Body() dto: RegisterDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.register(dto);
+    this.setAuthCookies(res, result.accessToken, result.refreshToken);
+    // 🔥 VẪN trả về tokens trong body để frontend lưu localStorage
+    //    (httpOnly cookie không đọc được bằng JS, cần token cho Authorization header)
+    return result;
   }
 
   // POST /auth/login
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  async login(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.login(dto);
+    this.setAuthCookies(res, result.accessToken, result.refreshToken);
+    // 🔥 VẪN trả về tokens trong body để frontend lưu localStorage
+    return result;
   }
 
   // POST /auth/refresh
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  async refresh(@Body('refreshToken') refreshToken: string) {
-    return this.authService.refreshTokens(refreshToken);
+  async refresh(
+    @Body('refreshToken') refreshToken: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.refreshTokens(refreshToken);
+    this.setAuthCookies(res, result.accessToken, result.refreshToken);
+    return result; // trả về { accessToken, refreshToken }
+  }
+
+  // POST /auth/logout
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  logout(@Res({ passthrough: true }) res: Response) {
+    res.clearCookie('accessToken', { path: '/' });
+    res.clearCookie('refreshToken', { path: '/' });
+    return { ok: true };
+  }
+
+  // ─── Helper: set httpOnly cookies ─────────────────────────────────────
+  private setAuthCookies(
+    res: Response,
+    accessToken: string,
+    refreshToken: string,
+  ) {
+    // Dùng chung config cho cả 2 cookie
+    const cookieConfig = {
+      httpOnly: true,
+      secure: false,           // 🔥 PHẢI false cho HTTP (chưa có SSL)
+      sameSite: 'lax' as const, // 'lax' an toàn nhất cho HTTP qua proxy
+      path: '/',
+      // 🔥 KHÔNG set Domain — để browser tự gán theo domain hiện tại
+      //    Điều này giúp cookie hoạt động với cả IP lẫn domain name
+    };
+
+    res.cookie('accessToken', accessToken, {
+      ...cookieConfig,
+      maxAge: 15 * 60 * 1000, // 15 phút
+    });
+
+    res.cookie('refreshToken', refreshToken, {
+      ...cookieConfig,
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 ngày
+    });
   }
 }
