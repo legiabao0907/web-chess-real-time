@@ -71,11 +71,9 @@ export class AuthController {
     // Dùng chung config cho cả 2 cookie
     const cookieConfig = {
       httpOnly: true,
-      secure: false,           // 🔥 PHẢI false cho HTTP (chưa có SSL)
-      sameSite: 'lax' as const, // 'lax' an toàn nhất cho HTTP qua proxy
+      secure: true,            // 🔥 true vì đã có HTTPS (SSL)
+      sameSite: 'lax' as const,
       path: '/',
-      // 🔥 KHÔNG set Domain — để browser tự gán theo domain hiện tại
-      //    Điều này giúp cookie hoạt động với cả IP lẫn domain name
     };
 
     res.cookie('accessToken', accessToken, {

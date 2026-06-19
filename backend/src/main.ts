@@ -13,15 +13,15 @@ async function bootstrap() {
   // 🔥 QUAN TRỌNG: Khi chạy sau Nginx proxy, origin từ browser là domain của bạn.
   //    Phải liệt kê CHÍNH XÁC các origin được phép, không dùng wildcard với credentials.
   const allowedOrigins = [
-    // Domain chính (qua Nginx port 80)
+    // Domain chính HTTPS (qua Nginx)
+    'https://chessskyscraper.duckdns.org',
+    // Domain HTTP (redirect cũ)
     'http://chessskyscraper.duckdns.org',
     // Truy cập trực tiếp Next.js (development)
     'http://chessskyscraper.duckdns.org:9300',
     // Local development
     'http://localhost:3000',
     'http://127.0.0.1:3000',
-    // IP trực tiếp (nếu cần)
-    'http://103.226.249.248:9300',
   ];
 
   app.enableCors({

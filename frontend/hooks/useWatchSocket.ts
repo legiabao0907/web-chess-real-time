@@ -26,8 +26,7 @@ export function useWatchSocket(gameId?: string) {
     pendingUpdatesRef.current = [];
 
     const socket = io(`${SOCKET_URL}/watch`, {
-      transports: ["polling", "websocket"],
-      upgrade: false,
+      transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
