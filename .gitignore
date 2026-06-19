@@ -1,5 +1,11 @@
 # Claude AI rules (local only, not for GitHub)
 .claude/
 
-# Environment variables (contains secrets)
+# Environment variables (contains secrets) — BLOCK ALL
 .env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+frontend/.env
+frontend/.env.*
