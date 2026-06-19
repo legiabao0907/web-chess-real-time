@@ -251,49 +251,59 @@ function PlayPageContent() {
     }
   }, [game?.turn, game?.whiteId, game?.blackId, user?.id, executePremove]);
 
-  // ── Click-to-move: select a piece ────────────────────────────────────
-  function onPieceClick(piece: string) {
+  // ── Click-to-move: unified handler via onSquareClick ─────────────────
+  // (onPieceClick is unreliable — can't distinguish duplicate pieces like two knights)
+  function onSquareClick(square: Square) {
     if (!user || !game || game.status !== "active") return;
     if (viewIndex !== -1) return;
     const isMyTurn = (game.turn === "w" && game.whiteId === user.id) || (game.turn === "b" && game.blackId === user.id);
-
-    // Extract square from piece (format: "wP", "bK", etc.)
-    const boardPos = getBoardPosition(game.fen);
-    const square = findPieceSquare(boardPos, piece);
-    if (!square) { setSelectedSquare(null); setLegalMoves([]); return; }
-
-    // Only allow selecting own pieces
-    const pieceColor = piece[0]; // "w" or "b"
     const myColor = isPlayerWhite ? "w" : "b";
-    if (pieceColor !== myColor) { setSelectedSquare(null); setLegalMoves([]); return; }
 
-    if (selectedSquare === square) {
-      setSelectedSquare(null);
-      setLegalMoves([]);
-    } else {
+    // Check what's on the clicked square
+    const pieceOnSquare = getPieceAt(game.fen, square);
+    const isOwnPiece = pieceOnSquare !== null && (
+      (myColor === "w" && pieceOnSquare === pieceOnSquare.toUpperCase()) ||
+      (myColor === "b" && pieceOnSquare === pieceOnSquare.toLowerCase())
+    );
+
+    // Case 1: Clicked own piece → select it (or deselect if already selected)
+    if (isOwnPiece && !selectedSquare) {
       setSelectedSquare(square);
       try {
         const chess = new Chess(game.fen);
         const moves = chess.moves({ square: square, verbose: true });
         setLegalMoves(moves.map((m: any) => m.to as Square));
       } catch { setLegalMoves([]); }
+      return;
     }
-  }
 
-  // ── Click-to-move: select destination ────────────────────────────────
-  function onSquareClick(square: Square) {
-    if (!user || !game || game.status !== "active") return;
-    if (viewIndex !== -1) return;
-    const isMyTurn = (game.turn === "w" && game.whiteId === user.id) || (game.turn === "b" && game.blackId === user.id);
+    // Case 2: Clicked a different own piece → switch selection
+    if (isOwnPiece && selectedSquare && selectedSquare !== square) {
+      setSelectedSquare(square);
+      try {
+        const chess = new Chess(game.fen);
+        const moves = chess.moves({ square: square, verbose: true });
+        setLegalMoves(moves.map((m: any) => m.to as Square));
+      } catch { setLegalMoves([]); }
+      return;
+    }
 
-    if (selectedSquare) {
+    // Case 3: Clicked same square → deselect
+    if (selectedSquare === square) {
+      setSelectedSquare(null);
+      setLegalMoves([]);
+      return;
+    }
+
+    // Case 4: Piece is selected and clicked a destination square
+    if (selectedSquare && !isOwnPiece) {
       if (isMyTurn) {
         // Regular move
         const promotion = (() => {
           const piece = getPieceAt(game.fen, selectedSquare);
-          if (piece && piece.toLowerCase() === (isPlayerWhite ? 'p' : 'p')) {
+          if (piece && (piece === 'P' || piece === 'p')) {
             const targetRank = square[1];
-            if (targetRank === '8' || targetRank === '1') return 'q';
+            if ((myColor === 'w' && targetRank === '8') || (myColor === 'b' && targetRank === '1')) return 'q';
           }
           return undefined;
         })();
@@ -310,7 +320,7 @@ function PlayPageContent() {
           }
         } catch { /* illegal — fall through */ }
       } else {
-        // Not our turn — set premove via click
+        // Not our turn → set premove via click
         const p: Premove = { from: selectedSquare, to: square, promotion: "q" };
         setPremove(p);
         premoveRef.current = p;
@@ -320,6 +330,7 @@ function PlayPageContent() {
       }
     }
 
+    // Fall through: deselect
     setSelectedSquare(null);
     setLegalMoves([]);
   }
@@ -372,22 +383,11 @@ function PlayPageContent() {
     for (let rankIdx = 0; rankIdx < 8; rankIdx++) {
       let fileIdx = 0;
       for (const ch of ranks[rankIdx]) {
-        if (ch >= "1" && ch <= "8") { fileIdx += parseInt(ch); }
+        if (ch >= "1" && ch <= "8") { fileIdx += Number.parseInt(ch, 10); }
         else { const sq = files[fileIdx] + (8 - rankIdx); result[sq] = ch; fileIdx++; }
       }
     }
     return result;
-  }
-
-  function findPieceSquare(boardPos: Record<string, string>, piece: string): Square | null {
-    // piece format: "wP", "bK" etc. In FEN: "P" = white pawn, "p" = black pawn
-    const color = piece[0]; // "w" or "b"
-    const type = piece[1]; // "P", "N", "B", "R", "Q", "K"
-    const fenChar = color === "w" ? type.toUpperCase() : type.toLowerCase();
-    for (const [sq, p] of Object.entries(boardPos)) {
-      if (p === fenChar) return sq as Square;
-    }
-    return null;
   }
 
   function getPieceAt(fen: string, square: Square): string | null {
@@ -633,7 +633,6 @@ function PlayPageContent() {
                 id="playBoard"
                 position={displayFen}
                 onPieceDrop={isReviewing ? () => false : onDrop}
-                onPieceClick={isReviewing ? undefined : onPieceClick}
                 onSquareClick={isReviewing ? undefined : onSquareClick}
                 animationDuration={150}
                 boardOrientation={!isPlayerWhite ? "black" : "white"}

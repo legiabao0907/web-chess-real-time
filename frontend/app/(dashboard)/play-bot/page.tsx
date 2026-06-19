@@ -6,7 +6,7 @@ const Chessboard: any = dynamic(
   () => import("react-chessboard").then((mod) => mod.Chessboard as any),
   { ssr: false }
 );
-import { Chess } from "chess.js";
+import { Chess, Square } from "chess.js";
 import {
   Flag,
   Handshake,
@@ -74,6 +74,15 @@ export default function PlayBotPage() {
   // Analysis mode
   const [analysisEnabled, setAnalysisEnabled] = useState(false);
   const analysisTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ─── Click-to-move state ────────────────────────────────────────────
+  const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
+  const [legalMoves, setLegalMoves] = useState<Square[]>([]);
+
+  // ─── Premove state ──────────────────────────────────────────────────
+  type Premove = { from: Square; to: Square; promotion?: string } | null;
+  const [premove, setPremove] = useState<Premove>(null);
+  const premoveRef = useRef<Premove>(null);
 
   const localGame = useMemo(() => new Chess(), []);
 
@@ -144,19 +153,156 @@ export default function PlayBotPage() {
     return () => window.removeEventListener("keydown", handleKey);
   }, [game, allFens, viewIndex, navigateTo]);
 
+  // ── Helpers ────────────────────────────────────────────────────────────
+  const getBoardPosition = (fen: string): Record<string, string> => {
+    const result: Record<string, string> = {};
+    const [rows] = fen.split(" ");
+    const ranks = rows.split("/");
+    const files = "abcdefgh";
+    for (let rankIdx = 0; rankIdx < 8; rankIdx++) {
+      let fileIdx = 0;
+      for (const ch of ranks[rankIdx]) {
+        if (ch >= "1" && ch <= "8") { fileIdx += Number.parseInt(ch, 10); }
+        else { const sq = files[fileIdx] + (8 - rankIdx); result[sq] = ch; fileIdx++; }
+      }
+    }
+    return result;
+  };
+
+  const getPieceAt = (fen: string, square: Square): string | null => {
+    return getBoardPosition(fen)[square] ?? null;
+  };
+
+  // ── Premove execution ───────────────────────────────────────────────────
+  const executePremove = useCallback(() => {
+    const p = premoveRef.current;
+    if (!p || !game || game.status !== "active") return;
+    const isPlayerTurn = (game.turn === "w" && game.whiteId === user?.id) ||
+                         (game.turn === "b" && game.blackId === user?.id);
+    if (!isPlayerTurn) return;
+    try {
+      const chess = new Chess(game.fen);
+      const move = chess.move({ from: p.from, to: p.to, promotion: p.promotion ?? "q" });
+      if (move) {
+        actions.makeMove(game.gameId, { from: p.from, to: p.to, promotion: p.promotion }, true);
+      }
+    } catch { /* illegal premove */ }
+    setPremove(null);
+    premoveRef.current = null;
+  }, [game, user?.id, actions]);
+
+  // Watch for bot's move to trigger premove
+  const prevTurnRef = useRef(game?.turn);
+  useEffect(() => {
+    if (!game || !user) return;
+    const prevTurn = prevTurnRef.current;
+    prevTurnRef.current = game.turn;
+    const isNowMyTurn = (game.turn === "w" && game.whiteId === user.id) ||
+                        (game.turn === "b" && game.blackId === user.id);
+    if (isNowMyTurn && prevTurn && prevTurn !== game.turn) {
+      executePremove();
+    }
+  }, [game?.turn, game?.whiteId, game?.blackId, user?.id, executePremove]);
+
+  // Clear premove & selection when game ends
+  useEffect(() => {
+    if (game && game.status !== "active") {
+      setPremove(null);
+      premoveRef.current = null;
+      setSelectedSquare(null);
+      setLegalMoves([]);
+    }
+  }, [game?.status]);
+
+  // ── Click-to-move ───────────────────────────────────────────────────────
+  function onSquareClick(square: Square) {
+    if (!user || !game || game.status !== "active") return;
+    if (viewIndex !== -1) return;
+    const isMyTurn = (game.turn === "w" && game.whiteId === user.id) || (game.turn === "b" && game.blackId === user.id);
+    const myColor = isPlayerWhite ? "w" : "b";
+
+    const pieceOnSquare = getPieceAt(game.fen, square);
+    const isOwnPiece = pieceOnSquare !== null && (
+      (myColor === "w" && pieceOnSquare === pieceOnSquare.toUpperCase()) ||
+      (myColor === "b" && pieceOnSquare === pieceOnSquare.toLowerCase())
+    );
+
+    // Case 1: Click own piece → select
+    if (isOwnPiece && !selectedSquare) {
+      setSelectedSquare(square);
+      try {
+        const chess = new Chess(game.fen);
+        const moves = chess.moves({ square: square, verbose: true });
+        setLegalMoves(moves.map((m: any) => m.to as Square));
+      } catch { setLegalMoves([]); }
+      return;
+    }
+    // Case 2: Switch to different own piece
+    if (isOwnPiece && selectedSquare && selectedSquare !== square) {
+      setSelectedSquare(square);
+      try {
+        const chess = new Chess(game.fen);
+        const moves = chess.moves({ square: square, verbose: true });
+        setLegalMoves(moves.map((m: any) => m.to as Square));
+      } catch { setLegalMoves([]); }
+      return;
+    }
+    // Case 3: Deselect
+    if (selectedSquare === square) {
+      setSelectedSquare(null); setLegalMoves([]); return;
+    }
+    // Case 4: Destination square
+    if (selectedSquare && !isOwnPiece) {
+      if (isMyTurn) {
+        const promotion = (() => {
+          const piece = getPieceAt(game.fen, selectedSquare);
+          if (piece === (myColor === "w" ? "P" : "p")) {
+            const targetRank = square[1];
+            if ((myColor === "w" && targetRank === "8") || (myColor === "b" && targetRank === "1")) return "q";
+          }
+          return undefined;
+        })();
+        try {
+          const chess = new Chess(game.fen);
+          const move = chess.move({ from: selectedSquare, to: square, promotion: promotion ?? "q" });
+          if (move) {
+            actions.makeMove(game.gameId, { from: selectedSquare, to: square, promotion });
+            setSelectedSquare(null); setLegalMoves([]); setPremove(null); premoveRef.current = null;
+            return;
+          }
+        } catch { /* illegal */ }
+      } else {
+        // Premove via click
+        const p: Premove = { from: selectedSquare, to: square, promotion: "q" };
+        setPremove(p); premoveRef.current = p;
+        setSelectedSquare(null); setLegalMoves([]);
+        return;
+      }
+    }
+    setSelectedSquare(null); setLegalMoves([]);
+  }
+
+  // ── Drag-drop ───────────────────────────────────────────────────────────
   function onDrop(sourceSquare: any, targetSquare: any, piece: any) {
     if (!user || !game || game.status !== "active") return false;
     if (viewIndex !== -1) return false;
-    // Prevent moves when it's bot's turn
-    const isMyTurn =
-      (game.turn === "w" && game.whiteId === user.id) ||
-      (game.turn === "b" && game.blackId === user.id);
-    if (!isMyTurn) return false;
+    const isMyTurn = (game.turn === "w" && game.whiteId === user.id) || (game.turn === "b" && game.blackId === user.id);
+    if (!targetSquare) return false;
     const promotion = (typeof piece === "string" ? piece[1] : "q")?.toLowerCase() ?? "q";
+
+    if (!isMyTurn) {
+      // Premove via drag
+      const p: Premove = { from: sourceSquare as Square, to: targetSquare as Square, promotion };
+      setPremove(p); premoveRef.current = p;
+      return true;
+    }
+
     try {
       const move = localGame.move({ from: sourceSquare, to: targetSquare, promotion });
       if (!move) return false;
-      actions.makeMove(game.gameId, { from: sourceSquare, to: targetSquare, promotion });
+      actions.makeMove(game.gameId, { from: sourceSquare, to: targetSquare, promotion }, false);
+      setPremove(null); premoveRef.current = null;
+      setSelectedSquare(null); setLegalMoves([]);
       return true;
     } catch { return false; }
   }
@@ -376,13 +522,44 @@ export default function PlayBotPage() {
           )}
 
           <div className="w-full max-w-[580px] max-h-[580px] aspect-square relative">
+            {/* Premove indicator */}
+            {premove && (
+              <div style={{
+                position: "absolute", top: "8px", left: "50%", transform: "translateX(-50%)", zIndex: 15,
+                background: "rgba(34,197,94,0.2)", backdropFilter: "blur(4px)",
+                border: "1px solid rgba(34,197,94,0.5)", borderRadius: "8px",
+                padding: "4px 12px", color: "#4ade80", fontSize: "12px", fontWeight: 700,
+                display: "flex", alignItems: "center", gap: "6px",
+              }}>
+                <span>⚡</span> Premove: {premove.from}→{premove.to}
+                <button onClick={() => { setPremove(null); premoveRef.current = null; }}
+                  style={{ marginLeft: "4px", background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: "14px", lineHeight: 1 }}>
+                  ✕
+                </button>
+              </div>
+            )}
             {typeof window !== "undefined" && (
               <Chessboard
                 position={displayFen}
                 onPieceDrop={isReviewing ? () => false : onDrop}
+                onSquareClick={isReviewing ? undefined : onSquareClick}
                 animationDuration={150}
                 boardOrientation={isPlayerWhite ? "white" : "black"}
-                arePiecesDraggable={!isReviewing && game?.status === "active" && isMyTurn}
+                arePiecesDraggable={!isReviewing && game?.status === "active"}
+                arePremovesAllowed={!isReviewing && game?.status === "active"}
+                customPremoveDarkSquareStyle={{ backgroundColor: "rgba(34,197,94,0.45)" }}
+                customPremoveLightSquareStyle={{ backgroundColor: "rgba(34,197,94,0.55)" }}
+                customSquareStyles={{
+                  ...(selectedSquare ? { [selectedSquare]: { backgroundColor: "rgba(255,255,50,0.5)", borderRadius: "2px" } } : {}),
+                  ...Object.fromEntries(legalMoves.map(sq => [sq, {
+                    background: "radial-gradient(circle, rgba(0,0,0,0.35) 20%, transparent 25%)",
+                    borderRadius: "50%",
+                  }])),
+                }}
+                customDarkSquareStyle={{ backgroundColor: "#7e22ce" }}
+                customLightSquareStyle={{ backgroundColor: "#f3e8ff" }}
+                customDropSquareStyle={{ boxShadow: 'inset 0 0 1px 6px rgba(236,72,153,0.75)' }}
+                clearPremovesOnRightClick={true}
                 customBoardStyle={{
                   borderRadius: "6px",
                   boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
