@@ -9,7 +9,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../drizzle/schema/schema';
 import { users, friends } from '../drizzle/schema/users.schema';
 import { profileInfo } from '../drizzle/schema/profileInfo.schema';
-import { eq, and, sql, or } from 'drizzle-orm';
+import { eq, and, sql, or, ilike, ne } from 'drizzle-orm';
 import { DRIZZLE } from '../drizzle/drizzle.module';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
@@ -257,6 +257,32 @@ export class UserService {
       .from(friends)
       .innerJoin(users, eq(users.id, friends.user1Id))
       .where(and(eq(friends.user2Id, myId), eq(friends.status, 'Pending')));
+
+    return rows;
+  }
+
+  // ─── GET /user/search?q=... ───────────────────────────────────────────────
+  async searchUsers(query: string, excludeUserId: string) {
+    if (!query || query.trim().length < 1) return [];
+
+    const term = `%${query.trim()}%`;
+    const rows = await this.db
+      .select({
+        id: users.id,
+        username: users.username,
+        eloBlitz: users.blitzRating,
+        eloRapid: users.rapidRating,
+        eloBullet: users.bulletRating,
+      })
+      .from(users)
+      .where(
+        and(
+          ilike(users.username, term),
+          ne(users.id, excludeUserId),
+        ),
+      )
+      .orderBy(users.username)
+      .limit(10);
 
     return rows;
   }

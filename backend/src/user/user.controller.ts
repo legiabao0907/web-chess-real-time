@@ -6,6 +6,7 @@ import {
   Patch,
   Body,
   Param,
+  Query,
   UseGuards,
   Req,
 } from '@nestjs/common';
@@ -41,6 +42,13 @@ export class UserController {
   @UseGuards(JwtAuthGuard)
   async getPendingRequests(@Req() req: AuthRequest) {
     return this.userService.getPendingRequests(req.user.id);
+  }
+
+  // GET /user/search?q=... — search users by username
+  @Get('search')
+  @UseGuards(JwtAuthGuard)
+  async searchUsers(@Req() req: AuthRequest, @Query('q') q: string) {
+    return this.userService.searchUsers(q || '', req.user.id);
   }
 
   // GET /user/:id — public profile

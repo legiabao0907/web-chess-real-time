@@ -297,6 +297,153 @@
   opacity: 0.2;
 }
 
+/* ─── Search bar ──────────────────────────────────────────────────────────── */
+
+.friends-search-wrap {
+  position: relative;
+  margin-bottom: 1.25rem;
+}
+
+.friends-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(18,14,28,0.7);
+  border: 1px solid rgba(140,110,180,0.25);
+  border-radius: 12px;
+  padding: 10px 14px;
+  backdrop-filter: blur(12px);
+}
+
+.friends-search-icon {
+  color: rgba(255,255,255,0.3);
+  flex-shrink: 0;
+}
+
+.friends-search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #e8e0f0;
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+}
+
+.friends-search-input::placeholder {
+  color: rgba(255,255,255,0.25);
+}
+
+.friends-search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 6px;
+  background: rgba(18,14,30,0.95);
+  border: 1px solid rgba(140,110,180,0.3);
+  border-radius: 12px;
+  backdrop-filter: blur(18px);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  z-index: 50;
+  overflow: hidden;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.friends-search-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  transition: background 0.15s;
+}
+
+.friends-search-item:hover {
+  background: rgba(168,85,247,0.06);
+}
+
+.friends-search-item-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.friends-search-item-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.friends-search-item-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.friends-search-item-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e0d8f0;
+}
+
+.friends-search-item-elo {
+  font-size: 10px;
+  color: rgba(255,255,255,0.35);
+}
+
+.friends-search-sent {
+  font-size: 11px;
+  font-weight: 600;
+  color: #4ade80;
+  padding: 4px 10px;
+  background: rgba(34,197,94,0.1);
+  border-radius: 6px;
+}
+
+.fi-btn-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid rgba(168,85,247,0.3);
+  background: rgba(168,85,247,0.1);
+  color: #c084fc;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.fi-btn-add:hover {
+  background: rgba(168,85,247,0.2);
+  border-color: rgba(168,85,247,0.5);
+}
+
+.fi-btn-add:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.friends-search-empty {
+  text-align: center;
+  padding: 20px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.3);
+}
+
+/* ─── Spin animation ─── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.spin-icon {
+  animation: spin 0.8s linear infinite;
+}
+
 .friends-right-placeholder p {
   font-size: 13px;
 }

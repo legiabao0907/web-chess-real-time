@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   Users,
   Bell,
@@ -12,11 +12,13 @@ import {
   UserPlus,
   RefreshCw,
   Swords,
+  Search,
 } from "lucide-react";
 import { useFriendStore, Friend, PendingRequest } from "@/store/useFriendStore";
 import { useChatStore } from "@/store/useChatStore";
 import { useProfileStore } from "@/store/useProfileStore";
 import { getUser } from "@/lib/auth";
+import { apiFetch } from "@/lib/api";
 import PublicProfilePanel from "@/components/common/PublicProfilePanel";
 import "./friends.css";
 
@@ -163,6 +165,62 @@ export default function FriendsPage() {
   const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
   const [myId, setMyId] = useState<string | undefined>(undefined);
 
+  // ─── Search state ──────────────────────────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [addLoading, setAddLoading] = useState<Record<string, boolean>>({});
+  const searchRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Close search dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setSearchOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleSearch = useCallback(async (q: string) => {
+    setSearchQuery(q);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!q.trim()) {
+      setSearchResults([]);
+      setSearchOpen(false);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const data = await apiFetch<any[]>(`/user/search?q=${encodeURIComponent(q.trim())}`);
+        setSearchResults(data ?? []);
+        setSearchOpen(true);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 300);
+  }, []);
+
+  const handleAddFriend = async (targetId: string) => {
+    setAddLoading((s) => ({ ...s, [targetId]: true }));
+    try {
+      await useFriendStore.getState().sendFriendRequest(targetId);
+      setSearchResults((prev) =>
+        prev.map((u) => (u.id === targetId ? { ...u, _sent: true } : u))
+      );
+    } catch {
+      // ignore
+    } finally {
+      setAddLoading((s) => ({ ...s, [targetId]: false }));
+    }
+  };
+
   // Load data on mount
   useEffect(() => {
     const user = getUser();
@@ -231,8 +289,65 @@ export default function FriendsPage() {
 
         {/* Two-column layout */}
         <div className="friends-layout">
-          {/* ── Left column: lists ── */}
+          {/* ── Left column: Search + lists ── */}
           <div className="friends-left">
+
+            {/* ── Search bar ── */}
+            <div className="friends-search-wrap" ref={searchRef}>
+              <div className="friends-search-bar">
+                <Search size={14} className="friends-search-icon" />
+                <input
+                  type="text"
+                  placeholder="Find players by username..."
+                  value={searchQuery}
+                  onChange={(e) => handleSearch(e.target.value)}
+                  onFocus={() => { if (searchResults.length > 0) setSearchOpen(true); }}
+                  className="friends-search-input"
+                />
+                {searchLoading && <Loader2 size={14} className="spin-icon friends-search-icon" />}
+              </div>
+              {searchOpen && searchResults.length > 0 && (
+                <div className="friends-search-dropdown">
+                  {searchResults.map((u: any) => (
+                    <div key={u.id} className="friends-search-item">
+                      <div className="friends-search-item-avatar">
+                        <img
+                          src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`}
+                          alt={u.username}
+                        />
+                      </div>
+                      <div className="friends-search-item-info">
+                        <span className="friends-search-item-name">{u.username}</span>
+                        <span className="friends-search-item-elo">
+                          {u.eloBlitz} Blitz &middot; {u.eloRapid} Rapid
+                        </span>
+                      </div>
+                      {u._sent ? (
+                        <span className="friends-search-sent">✓ Sent</span>
+                      ) : (
+                        <button
+                          className="fi-btn fi-btn-add"
+                          onClick={() => handleAddFriend(u.id)}
+                          disabled={addLoading[u.id]}
+                        >
+                          {addLoading[u.id] ? (
+                            <Loader2 size={12} className="spin-icon" />
+                          ) : (
+                            <UserPlus size={12} />
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {searchOpen && searchQuery.trim() && searchResults.length === 0 && !searchLoading && (
+                <div className="friends-search-dropdown">
+                  <div className="friends-search-empty">No players found</div>
+                </div>
+              )}
+            </div>
+
             {/* Pending requests */}
             {(isLoadingRequests || pendingRequests.length > 0) && (
               <div className="friends-card">
