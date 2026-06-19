@@ -24,11 +24,14 @@ CREATE TABLE IF NOT EXISTS "games" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"white_id" uuid,
 	"black_id" uuid,
+	"white_username" varchar(255),
+	"black_username" varchar(255),
 	"winner_id" uuid,
 	"status" varchar(50),
 	"time_control" varchar(50),
 	"pgn" text,
 	"final_fen" text,
+	"moves" jsonb DEFAULT '[]'::jsonb,
 	"tournament_id" uuid,
 	"created_at" timestamp DEFAULT now()
 );
@@ -163,3 +166,11 @@ DO $$ BEGIN
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
+--> statement-breakpoint
+-- Add columns that were added to the TypeScript schema after the initial migration
+-- These are idempotent (IF NOT EXISTS) and safe to run on every startup
+ALTER TABLE "games" ADD COLUMN IF NOT EXISTS "white_username" varchar(255);
+--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN IF NOT EXISTS "black_username" varchar(255);
+--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN IF NOT EXISTS "moves" jsonb DEFAULT '[]'::jsonb;
