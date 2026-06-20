@@ -27,6 +27,15 @@ Tài liệu này mô tả toàn bộ hệ thống cờ vua trực tuyến: use c
 3. [Sơ Đồ Use Case Tổng Quan](#sơ-đồ-use-case-tổng-quan)
 4. [Sequence Diagrams](#sequence-diagrams)
 5. [ERD & Redis Data Structures](#erd--redis-data-structures)
+6. [Deployment Architecture — Kiến Trúc Triển Khai Production](#9-deployment-architecture--kiến-trúc-triển-khai-production)
+   - [Sơ đồ Triển Khai](#91-deployment-diagram)
+   - [Port Mapping](#92-port-mapping--tránh-xung-đột-vps)
+   - [Luồng Request](#93-luồng-request--chi-tiết)
+   - [Cấu Hình Nginx](#94-cấu-hình-nginx-tham-khảo)
+   - [Biến Môi Trường Production](#95-biến-môi-trường-cho-deploy-production)
+   - [Cài Đặt HTTPS](#96-cài-đặt-https-với-certbot)
+   - [Quy Trình Deploy](#97-quy-trình-deploy)
+   - [File Liên Quan](#98-các-file-liên-quan-đến-deploy)
 
 ---
 
@@ -2082,6 +2091,209 @@ graph TB
             TOURN_GW["🏆 TournamentGateway<br/>rounds, standings"]
             LB_GW["📊 LeaderboardGateway<br/>ELO updates"]
         end
+
+---
+
+## 9. Deployment Architecture — Kiến Trúc Triển Khai Production
+
+Sơ đồ này mô tả **toàn bộ hạ tầng triển khai** trên VPS production: Nginx reverse proxy, HTTPS/SSL, Docker Compose, và cách các service giao tiếp với nhau.
+
+### 9.1 Deployment Diagram
+
+```mermaid
+graph TB
+    subgraph "🌍 INTERNET"
+        USER["👤 Người dùng<br/>(Browser)"]
+    end
+
+    subgraph "🔒 VPS — Ubuntu Server"
+        
+        subgraph "🔀 NGINX Reverse Proxy (Port 80/443)"
+            NGINX["📄 nginx.conf<br/>━━━━━━━━━━━━━━━━<br/>• SSL Termination (Certbot/Let's Encrypt)<br/>• HTTP → HTTPS redirect<br/>• Reverse Proxy: /api/* → backend:9080<br/>• Reverse Proxy: / → frontend:9300<br/>• WebSocket Upgrade: /chess, /chat,<br/>  /watch, /tournament, /leaderboard"]
+        end
+
+        subgraph "🐳 Docker Compose (chess-network bridge)"
+            subgraph "Frontend Container"
+                FE["🎨 Next.js 16<br/>Container: chess_frontend<br/>Internal Port: 3000<br/>Host Port: 9300"]
+            end
+            subgraph "Backend Container"
+                BE["⚙️ NestJS<br/>Container: chess_backend<br/>Internal Port: 8080<br/>Host Port: 9080"]
+            end
+            subgraph "Database Containers"
+                PG["🐘 PostgreSQL 17<br/>Container: chess_postgres<br/>Internal Port: 5432<br/>Host Port: 9432"]
+                RD["🧠 Redis 7 Alpine<br/>Container: chess_redis<br/>Internal Port: 6379<br/>Host Port: 9379"]
+            end
+        end
+    end
+
+    USER -->|"HTTPS :443"| NGINX
+    NGINX -->|"/api/* REST"| BE
+    NGINX -->|"/* Static + SSR"| FE
+    NGINX -.->|"WebSocket Upgrade"| BE
+    BE --> PG
+    BE --> RD
+    FE -->|"Client-side API calls<br/>(browser → public IP)"| NGINX
+
+    style USER fill:#e3f2fd,stroke:#1565c0
+    style NGINX fill:#fff3e0,stroke:#ef6c00
+    style FE fill:#e8f5e9,stroke:#2e7d32
+    style BE fill:#fce4ec,stroke:#c2185b
+    style PG fill:#f3e5f5,stroke:#7b1fa2
+    style RD fill:#ffebee,stroke:#c62828
+```
+
+### 9.2 Port Mapping — Tránh Xung Đột VPS
+
+| Service | Internal Port (Docker) | Host Port (VPS) | Ghi chú |
+|---------|----------------------|-----------------|---------|
+| **Nginx** | — | **80** (HTTP), **443** (HTTPS) | Cổng duy nhất mở ra internet |
+| **Frontend** (Next.js) | 3000 | 9300 | Nginx proxy `/` → `:9300` |
+| **Backend** (NestJS) | 8080 | 9080 | Nginx proxy `/api/*` + WebSocket → `:9080` |
+| **PostgreSQL** | 5432 | 9432 | Chỉ mở nội bộ (không expose ra internet) |
+| **Redis** | 6379 | 9379 | Chỉ mở nội bộ (không expose ra internet) |
+
+> **Tất cả các port đều dùng đầu số 9** để né các port phổ biến đã bị chiếm trên VPS công ty (3000, 4000, 5432, 6379, 27017...).
+
+### 9.3 Luồng Request — Chi Tiết
+
+```
+1. Browser → https://chess.yourdomain.com (hoặc IP VPS)
+   │
+2. DNS phân giải → VPS Public IP (VD: 103.226.249.248)
+   │
+3. Nginx nhận request trên port 443 (HTTPS)
+   │
+   ├── /api/auth/* (REST)
+   │   └── proxy_pass http://chess_backend:9080
+   │
+   ├── /socket.io/* (WebSocket handshake)
+   │   └── proxy_pass http://chess_backend:9080
+   │   └── Upgrade: websocket header → giữ kết nối WebSocket
+   │
+   └── /* (Frontend pages + static assets)
+       └── proxy_pass http://chess_frontend:9300
+```
+
+### 9.4 Cấu Hình Nginx Tham Khảo
+
+```nginx
+# /etc/nginx/sites-available/chess-app
+
+server {
+    listen 80;
+    server_name chess.yourdomain.com;  # hoặc IP VPS
+    return 301 https://$host$request_uri;  # Force HTTPS
+}
+
+server {
+    listen 443 ssl http2;
+    server_name chess.yourdomain.com;
+
+    # SSL Certificate (Certbot / Let's Encrypt)
+    ssl_certificate     /etc/letsencrypt/live/chess.yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/chess.yourdomain.com/privkey.pem;
+
+    # WebSocket Upgrade map
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+    }
+
+    # ─── Frontend (Next.js) ──────────────────────────────────
+    location / {
+        proxy_pass http://127.0.0.1:9300;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ─── Backend REST API ────────────────────────────────────
+    location /api/ {
+        proxy_pass http://127.0.0.1:9080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ─── WebSocket (Socket.IO) ───────────────────────────────
+    # Phải để riêng location để Nginx upgrade connection
+    location /socket.io/ {
+        proxy_pass http://127.0.0.1:9080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_read_timeout 86400s;  # WebSocket long-lived
+        proxy_send_timeout 86400s;
+    }
+}
+```
+
+### 9.5 Biến Môi Trường Cho Deploy Production
+
+| Biến | Giá trị Production | Mục đích |
+|------|-------------------|----------|
+| `VPS_PUBLIC_IP` | `103.226.249.248` | IP công khai của VPS |
+| `FRONTEND_URL` | `http://103.226.249.248:9300` | CORS origin cho backend |
+| `NEXT_PUBLIC_API_URL` | `http://103.226.249.248:9080/api` | Browser gọi REST API (nhúng vào JS) |
+| `NEXT_PUBLIC_BACKEND_URL` | `http://103.226.249.248:9080` | Browser kết nối WebSocket (nhúng vào JS) |
+
+> ⚠️ **Quan trọng**: `NEXT_PUBLIC_*` được nhúng cứng vào JavaScript khi `npm run build`. Nếu để `localhost`, browser người dùng sẽ gọi API về chính máy họ → lỗi 404. Phải dùng IP/hostname công khai của VPS.
+
+### 9.6 Cài Đặt HTTPS Với Certbot
+
+```bash
+# 1. Cài Certbot + Nginx plugin
+sudo apt update
+sudo apt install certbot python3-certbot-nginx -y
+
+# 2. Lấy chứng chỉ SSL (tự động cấu hình Nginx)
+sudo certbot --nginx -d chess.yourdomain.com
+
+# 3. Kiểm tra tự động renew
+sudo certbot renew --dry-run
+
+# 4. Auto-renew được cài tự động qua systemd timer
+systemctl status certbot.timer
+```
+
+### 9.7 Quy Trình Deploy
+
+```bash
+# ─── 1. Pull code mới nhất ──────────────────────────────────
+cd /opt/web-datn      # hoặc thư mục dự án trên VPS
+git pull
+
+# ─── 2. Build lại Docker images (nếu code thay đổi) ──────────
+docker-compose build --no-cache backend
+docker-compose build --no-cache frontend
+
+# ─── 3. Khởi động toàn bộ stack ─────────────────────────────
+docker-compose up -d
+
+# ─── 4. Reload Nginx (nếu cấu hình thay đổi) ────────────────
+sudo nginx -t && sudo systemctl reload nginx
+
+# ─── 5. Kiểm tra logs ──────────────────────────────────────
+docker-compose logs -f backend
+docker-compose logs -f frontend
+```
+
+### 9.8 Các File Liên Quan Đến Deploy
+
+| File | Mục đích |
+|------|----------|
+| `.env` | Biến môi trường Docker Compose (secrets, ports, URLs) — **không commit** |
+| `.env.example` | Template biến môi trường (placeholder) — **được commit** |
+| `docker-compose.yml` | Định nghĩa toàn bộ Docker stack (4 services + network + volumes) |
+| `backend/Dockerfile` | Multi-stage build cho NestJS (deps → builder → runner Alpine) |
+| `frontend/Dockerfile` | Multi-stage build cho Next.js (deps → builder → runner standalone) |
+| `/etc/nginx/sites-available/chess-app` | Cấu hình Nginx reverse proxy + SSL (trên VPS, thủ công) |
 
         subgraph "Controller Layer (REST)"
             AUTH_CTRL["🔐 AuthController<br/>register, login, refresh"]
