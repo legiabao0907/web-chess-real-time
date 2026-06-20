@@ -26,6 +26,7 @@ import PublicProfilePanel from "@/components/common/PublicProfilePanel";
 import { useChatStore, useTotalUnread } from "@/store/useChatStore";
 import { useFriendChat } from "@/hooks/useFriendChat";
 import { useFriendStore } from "@/store/useFriendStore";
+import { useSettingsStore } from "@/store/useSettingsStore";
 import ClientOnly from "@/components/common/ClientOnly";
 
 export default function DashboardLayout({
@@ -40,6 +41,7 @@ export default function DashboardLayout({
   const totalUnread = useTotalUnread();
   const pendingCount = useFriendStore((s) => s.pendingRequests.length);
   const { loadPendingRequests } = useFriendStore();
+  const fetchSettings = useSettingsStore((s) => s.fetchSettings);
 
   const [clientUser, setClientUser] = useState<ReturnType<typeof getUser>>(null);
 
@@ -56,6 +58,7 @@ export default function DashboardLayout({
       loadProfile();
     }
     if (localUser?.id) {
+      fetchSettings();
       loadPendingRequests();
     }
   }, []);

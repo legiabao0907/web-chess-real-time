@@ -12,6 +12,7 @@ import { profileInfo } from '../drizzle/schema/profileInfo.schema';
 import { eq, and, sql, or, ilike, ne } from 'drizzle-orm';
 import { DRIZZLE } from '../drizzle/drizzle.module';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { UpdateSettingsDto } from './dto/update-settings.dto';
 
 @Injectable()
 export class UserService {
@@ -66,6 +67,11 @@ export class UserService {
       wins: meta.wins ?? 0,
       losses: meta.losses ?? 0,
       draws: meta.draws ?? 0,
+      // Settings fields
+      theme: meta.theme ?? 'dark',
+      soundEnabled: meta.soundEnabled ?? true,
+      boardStyle: meta.boardStyle ?? 'classic',
+      pieceStyle: meta.pieceStyle ?? 'standard',
       friends: friendRows.map((f) => ({
         id: f.id,
         username: f.username,
@@ -108,6 +114,36 @@ export class UserService {
       ...(dto.country !== undefined && { country: dto.country }),
       ...(dto.avatarUrl !== undefined && { avatarUrl: dto.avatarUrl }),
     };
+
+    if (existing) {
+      await (this.db as any)
+        .update(profileInfo)
+        .set({ metadata: sql`${JSON.stringify(newMeta)}::jsonb` })
+        .where(eq(profileInfo.userId, userId));
+    } else {
+      await (this.db as any)
+        .insert(profileInfo)
+        .values([{ userId, metadata: newMeta }]);
+    }
+
+    return this.getMe(userId);
+  }
+
+  // ─── PATCH /user/settings ──────────────────────────────────────────────────
+  async updateSettings(userId: string, dto: UpdateSettingsDto) {
+    const [existing] = await this.db
+      .select()
+      .from(profileInfo)
+      .where(eq(profileInfo.userId, userId))
+      .limit(1);
+
+    const currentMeta = (existing?.metadata as Record<string, unknown>) ?? {};
+    const newMeta: Record<string, unknown> = { ...currentMeta };
+
+    if (dto.theme !== undefined) newMeta.theme = dto.theme;
+    if (dto.soundEnabled !== undefined) newMeta.soundEnabled = dto.soundEnabled;
+    if (dto.boardStyle !== undefined) newMeta.boardStyle = dto.boardStyle;
+    if (dto.pieceStyle !== undefined) newMeta.pieceStyle = dto.pieceStyle;
 
     if (existing) {
       await (this.db as any)

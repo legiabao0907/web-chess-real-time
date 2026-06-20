@@ -12,6 +12,51 @@
 
 body {
   background: #0d0b12;
+  color: #e2e8f0;
+  transition: background 0.3s, color 0.3s;
+}
+
+/* ─── Light theme (html.light class) ────────────────────── */
+html.light body {
+  background: #f8fafc;
+  color: #1e293b;
+}
+html.light .glass-card {
+  background: rgba(255,255,255,0.8) !important;
+  border: 1px solid rgba(0,0,0,0.06) !important;
+}
+html.light .dh-welcome-title {
+  color: #1e293b !important;
+}
+html.light .dh-welcome-sub {
+  color: #64748b !important;
+}
+html.light input {
+  background: #f1f5f9;
+  color: #1e293b;
+  border-color: #cbd5e1;
+}
+html.light input::placeholder {
+  color: #94a3b8;
+}
+html.light .settings-card h3 {
+  color: #1e293b !important;
+}
+html.light .quick-link,
+html.light .theme-btn,
+html.light .style-option,
+html.light .sound-toggle {
+  background: rgba(0,0,0,0.02);
+  color: #475569;
+}
+html.light .theme-btn.active,
+html.light .style-option.active {
+  background: rgba(168,85,247,0.08);
+  color: #7c3aed;
+}
+html.light .quick-link:hover {
+  background: rgba(0,0,0,0.04);
+  color: #1e293b;
 }
 
 input::placeholder {
