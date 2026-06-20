@@ -139,16 +139,17 @@ export default function RegisterPage() {
         }}
       />
 
-      {/* ─── Brand name "ChessSkyscraper" on the left ─── */}
+      {/* ─── Brand name "ChessSkyscraper" at the top ─── */}
       <div
+        className="register-brand"
         style={{
           position: "absolute",
-          left: "5%",
-          top: "50%",
-          transform: "translateY(-50%) rotate(-90deg)",
+          top: "5%",
+          left: "50%",
+          transform: "translateX(-50%)",
           zIndex: 10,
           display: "flex",
-          flexDirection: "column",
+          flexDirection: "row",
           alignItems: "center",
           gap: "0px",
         }}
@@ -188,7 +189,7 @@ export default function RegisterPage() {
         </div>
 
         {/* Title */}
-        <h1 style={{
+        <h1 className="register-title" style={{
           fontSize: "36px",
           fontWeight: 900,
           letterSpacing: "0.08em",
@@ -204,7 +205,7 @@ export default function RegisterPage() {
         </h1>
 
         {/* Card */}
-        <div style={{
+        <div className="register-card" style={{
           width: "100%",
           backgroundColor: "rgba(18,14,30,0.80)",
           border: "1px solid rgba(140,110,180,0.28)",
@@ -477,6 +478,36 @@ export default function RegisterPage() {
           </div>
         </div>
       </div>
+
+      <style>{`
+        input::placeholder { color: #4a3f5c; }
+        input:focus { border-color: #a855f7 !important; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ─── Mobile responsive ─── */
+        @media (max-width: 600px) {
+          .register-card {
+            padding: 28px 20px !important;
+            border-radius: 16px !important;
+          }
+          .register-title {
+            font-size: 26px !important;
+            margin-bottom: 20px !important;
+          }
+          .register-brand {
+            font-size: clamp(20px, 5vw, 32px) !important;
+            top: 3% !important;
+          }
+        }
+        @media (max-width: 400px) {
+          .register-card {
+            padding: 22px 14px !important;
+          }
+          .register-title {
+            font-size: 20px !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

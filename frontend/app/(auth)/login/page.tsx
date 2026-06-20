@@ -139,7 +139,7 @@ export default function LoginPage() {
         </div>
 
         {/* Title */}
-        <h1 style={{
+        <h1 className="login-title-main" style={{
           fontSize: "38px",
           fontWeight: 900,
           letterSpacing: "0.04em",
@@ -153,7 +153,7 @@ export default function LoginPage() {
         }}>
           CHESS
         </h1>
-        <h2 style={{
+        <h2 className="login-title-sub" style={{
           fontSize: "38px",
           fontWeight: 900,
           letterSpacing: "0.08em",
@@ -169,7 +169,7 @@ export default function LoginPage() {
         </h2>
 
         {/* Card */}
-        <div style={{
+        <div className="login-card" style={{
           width: "100%",
           backgroundColor: "rgba(18,14,30,0.82)",
           border: "1px solid rgba(140,110,180,0.3)",
@@ -372,41 +372,6 @@ export default function LoginPage() {
               )}
             </button>
 
-            {/* Divider */}
-            <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "24px" }}>
-              <div style={{ flex: 1, height: "1px", backgroundColor: "rgba(100,75,140,0.3)" }}></div>
-              <span style={{ color: "#6b5b8a", fontSize: "9px", fontWeight: 700, letterSpacing: "0.15em" }}>CHESS PLATFORM</span>
-              <div style={{ flex: 1, height: "1px", backgroundColor: "rgba(100,75,140,0.3)" }}></div>
-            </div>
-
-            {/* Social Logins */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
-              <button type="button" style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: "10px",
-                padding: "12px", backgroundColor: "rgba(17,14,24,0.8)", border: "1px solid rgba(100,75,140,0.3)", borderRadius: "10px",
-                color: "#d1c4e0", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", cursor: "pointer",
-                transition: "background-color 0.2s"
-              }}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(60,40,80,0.4)")}
-                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "rgba(17,14,24,0.8)")}
-              >
-                <div style={{ width: "6px", height: "6px", backgroundColor: "#5865F2", borderRadius: "50%", boxShadow: "0 0 8px #5865F2" }}></div>
-                DISCORD
-              </button>
-              <button type="button" style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: "10px",
-                padding: "12px", backgroundColor: "rgba(17,14,24,0.8)", border: "1px solid rgba(100,75,140,0.3)", borderRadius: "10px",
-                color: "#d1c4e0", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", cursor: "pointer",
-                transition: "background-color 0.2s"
-              }}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(60,40,80,0.4)")}
-                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "rgba(17,14,24,0.8)")}
-              >
-                <div style={{ width: "6px", height: "6px", backgroundColor: "#4285F4", borderRadius: "50%", boxShadow: "0 0 8px #4285F4" }}></div>
-                GOOGLE
-              </button>
-            </div>
-
           </form>
         </div>
 
@@ -430,6 +395,31 @@ export default function LoginPage() {
         input::placeholder { color: #4a3f5c; }
         input:focus { border-color: #a855f7 !important; }
         @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ─── Mobile responsive ─── */
+        @media (max-width: 600px) {
+          .login-card {
+            padding: 28px 20px !important;
+            border-radius: 16px !important;
+          }
+          .login-title-main {
+            font-size: 28px !important;
+          }
+          .login-title-sub {
+            font-size: 28px !important;
+          }
+        }
+        @media (max-width: 400px) {
+          .login-card {
+            padding: 22px 14px !important;
+          }
+          .login-title-main {
+            font-size: 22px !important;
+          }
+          .login-title-sub {
+            font-size: 22px !important;
+          }
+        }
       `}</style>
     </div>
   );

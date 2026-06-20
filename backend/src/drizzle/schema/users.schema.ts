@@ -1,5 +1,4 @@
-import { pgTable, uuid, varchar, text, integer, timestamp, primaryKey } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { pgTable, uuid, varchar, text, integer, timestamp, primaryKey, index } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -19,4 +18,6 @@ export const friends = pgTable('friends', {
   status: varchar('status', { length: 50 }), // Pending, Accepted
 }, (t) => ({
   pk: primaryKey({ columns: [t.user1Id, t.user2Id] }),
+  // CRITICAL: FK index for reverse lookup (find friends of user2)
+  user2IdIdx: index('idx_friends_user_id_2').on(t.user2Id),
 }));

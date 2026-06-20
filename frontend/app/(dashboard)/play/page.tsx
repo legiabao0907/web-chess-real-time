@@ -13,6 +13,8 @@ import { useChessSocket } from "@/hooks/useChessSocket";
 import { getUser, AuthUser } from "@/lib/auth";
 import { useSearchParams } from "next/navigation";
 import { useChatStore } from "@/store/useChatStore";
+import { useSettingsStore } from "@/store/useSettingsStore";
+import { BOARD_COLORS, createCustomPieces } from "@/lib/boardStyles";
 import OpponentProfilePopup from "@/components/chess/OpponentProfilePopup";
 import EvaluationBar from "@/components/chess/EvaluationBar";
 
@@ -37,6 +39,12 @@ function PlayPageContent() {
 
   // Online tracking via ChatGateway
   const { onlineUsers } = useChatStore();
+
+  // Board & piece style from settings
+  const boardStyle = useSettingsStore((s) => s.boardStyle);
+  const pieceStyle = useSettingsStore((s) => s.pieceStyle);
+  const boardColors = BOARD_COLORS[boardStyle] ?? BOARD_COLORS.classic;
+  const customPieces = createCustomPieces(pieceStyle);
 
   // Opponent profile popup
   const [showOpponentPopup, setShowOpponentPopup] = useState(false);
@@ -649,8 +657,9 @@ function PlayPageContent() {
                     borderRadius: "50%",
                   }])),
                 }}
-                customDarkSquareStyle={{ backgroundColor: "#7e22ce" }}
-                customLightSquareStyle={{ backgroundColor: "#f3e8ff" }}
+                customDarkSquareStyle={{ backgroundColor: boardColors.dark }}
+                customLightSquareStyle={{ backgroundColor: boardColors.light }}
+                customPieces={customPieces}
                 customDropSquareStyle={{ boxShadow: 'inset 0 0 1px 6px rgba(236,72,153,0.75)' }}
                 clearPremovesOnRightClick={true}
               />

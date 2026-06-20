@@ -3,9 +3,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Monitor,
-  Moon,
-  Sun,
   Volume2,
   VolumeX,
   Palette,
@@ -16,7 +13,7 @@ import {
   Shield,
   Save,
 } from "lucide-react";
-import { useSettingsStore, ThemeMode, BoardStyle, PieceStyle } from "@/store/useSettingsStore";
+import { useSettingsStore, BoardStyle, PieceStyle } from "@/store/useSettingsStore";
 import { getUser, AuthUser } from "@/lib/auth";
 import "../dashboard.css";
 
@@ -34,11 +31,9 @@ const pieceLabels: Record<PieceStyle, string> = {
 
 export default function SettingsPage() {
   const router = useRouter();
-  const theme = useSettingsStore((s) => s.theme);
   const soundEnabled = useSettingsStore((s) => s.soundEnabled);
   const boardStyle = useSettingsStore((s) => s.boardStyle);
   const pieceStyle = useSettingsStore((s) => s.pieceStyle);
-  const setTheme = useSettingsStore((s) => s.setTheme);
   const setSoundEnabled = useSettingsStore((s) => s.setSoundEnabled);
   const setBoardStyle = useSettingsStore((s) => s.setBoardStyle);
   const setPieceStyle = useSettingsStore((s) => s.setPieceStyle);
@@ -63,11 +58,6 @@ export default function SettingsPage() {
     setSaving(label);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => setSaving(null), 1200);
-  };
-
-  const handleThemeChange = async (t: ThemeMode) => {
-    await setTheme(t);
-    flashSave('Theme');
   };
 
   const handleSoundToggle = async () => {
@@ -112,30 +102,6 @@ export default function SettingsPage() {
 
       {/* ─── SETTINGS GRID ─── */}
       <div className="settings-grid">
-
-        {/* ── THEME ── */}
-        <div className="glass-card settings-card">
-          <div className="flex items-center gap-3 mb-4">
-            <Monitor size={20} className="text-purple-400" />
-            <h3 className="text-white font-semibold text-base">Interface Theme</h3>
-          </div>
-          <div className="theme-options">
-            <button
-              onClick={() => handleThemeChange('dark')}
-              className={`theme-btn ${theme === 'dark' ? 'active' : ''}`}
-            >
-              <Moon size={24} />
-              <span>Dark</span>
-            </button>
-            <button
-              onClick={() => handleThemeChange('light')}
-              className={`theme-btn ${theme === 'light' ? 'active' : ''}`}
-            >
-              <Sun size={24} />
-              <span>Light</span>
-            </button>
-          </div>
-        </div>
 
         {/* ── SOUND ── */}
         <div className="glass-card settings-card">

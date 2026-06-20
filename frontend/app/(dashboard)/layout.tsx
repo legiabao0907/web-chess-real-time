@@ -217,6 +217,37 @@ export default function DashboardLayout({
             <span>Legals</span>
           </div>
         </main>
+
+        {/* ─── Mobile Bottom Navigation ─── */}
+        <nav className="mobile-bottom-nav">
+          <Link href="/home" className={`mobile-nav-item ${isActive("/home") ? "active" : ""}`}>
+            <Home size={20} />
+            <span>Home</span>
+          </Link>
+          <Link href="/play" className={`mobile-nav-item ${isActive("/play") ? "active" : ""}`}>
+            <Swords size={20} />
+            <span>Play</span>
+          </Link>
+          <Link href="/tournaments" className={`mobile-nav-item ${isActive("/tournaments") ? "active" : ""}`}>
+            <Trophy size={20} />
+            <span>Tourney</span>
+          </Link>
+          <Link href="/live" className={`mobile-nav-item ${isActive("/live") ? "active" : ""}`}>
+            <Radio size={20} />
+            <span>Live</span>
+          </Link>
+          <button
+            onClick={() => openChat('', '')}
+            className="mobile-nav-item"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', position: 'relative' }}
+          >
+            <MessageCircle size={20} />
+            <span>Chat</span>
+            {totalUnread > 0 && (
+              <span className="mobile-nav-badge">{totalUnread > 9 ? '9+' : totalUnread}</span>
+            )}
+          </button>
+        </nav>
       </div>
     </>
   );

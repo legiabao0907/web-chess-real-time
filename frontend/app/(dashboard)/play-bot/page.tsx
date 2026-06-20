@@ -25,6 +25,8 @@ import "../play/play.css";
 import "./bot.css";
 import { useChessSocket, Difficulty, GameState } from "@/hooks/useChessSocket";
 import { getUser, AuthUser } from "@/lib/auth";
+import { useSettingsStore } from "@/store/useSettingsStore";
+import { BOARD_COLORS, createCustomPieces } from "@/lib/boardStyles";
 import EvaluationBar from "@/components/chess/EvaluationBar";
 
 const DIFFICULTY_CONFIG = {
@@ -85,6 +87,12 @@ export default function PlayBotPage() {
   const premoveRef = useRef<Premove>(null);
 
   const localGame = useMemo(() => new Chess(), []);
+
+  // Board & piece style from settings
+  const boardStyle = useSettingsStore((s) => s.boardStyle);
+  const pieceStyle = useSettingsStore((s) => s.pieceStyle);
+  const boardColors = BOARD_COLORS[boardStyle] ?? BOARD_COLORS.classic;
+  const customPieces = createCustomPieces(pieceStyle);
 
   useEffect(() => {
     setMounted(true);
@@ -556,8 +564,9 @@ export default function PlayBotPage() {
                     borderRadius: "50%",
                   }])),
                 }}
-                customDarkSquareStyle={{ backgroundColor: "#7e22ce" }}
-                customLightSquareStyle={{ backgroundColor: "#f3e8ff" }}
+                customDarkSquareStyle={{ backgroundColor: boardColors.dark }}
+                customLightSquareStyle={{ backgroundColor: boardColors.light }}
+                customPieces={customPieces}
                 customDropSquareStyle={{ boxShadow: 'inset 0 0 1px 6px rgba(236,72,153,0.75)' }}
                 clearPremovesOnRightClick={true}
                 customBoardStyle={{

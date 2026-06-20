@@ -1160,3 +1160,150 @@
   color: #e230ff;
   border-bottom-color: #e230ff;
 }
+
+/* ══════════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE — PLAY PAGE
+   ══════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  .play-container {
+    flex-direction: column;
+    gap: 1rem;
+    height: auto;
+    padding-bottom: 70px; /* space for mobile bottom nav */
+  }
+
+  .board-area {
+    gap: 0.75rem;
+  }
+
+  .board-wrapper {
+    max-width: 100%;
+    aspect-ratio: 1;
+    max-height: calc(100vw - 32px);
+  }
+
+  .player-row {
+    padding: 0 0.25rem;
+  }
+
+  .player-avatar {
+    width: 36px;
+    height: 36px;
+  }
+
+  .player-name {
+    font-size: 13px;
+  }
+
+  .player-meta {
+    font-size: 10px;
+  }
+
+  .clock {
+    padding: 0.35rem 0.6rem;
+  }
+
+  .clock-time {
+    font-size: 18px;
+  }
+
+  .clock-label {
+    font-size: 8px;
+  }
+
+  .console-area {
+    width: 100%;
+    max-height: 250px;
+  }
+
+  .console-tab {
+    padding: 0.5rem;
+    font-size: 10px;
+  }
+
+  .action-buttons {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+
+  .action-btn {
+    padding: 0.5rem;
+    font-size: 10px;
+  }
+
+  .eval-bar-container {
+    gap: 0.5rem;
+  }
+
+  .eval-text {
+    font-size: 9px;
+  }
+
+  .matchmaking-panel {
+    padding: 1.5rem;
+    max-width: 95%;
+    gap: 1.25rem;
+  }
+
+  .matchmaking-title {
+    font-size: 18px;
+  }
+
+  .matchmaking-subtitle {
+    font-size: 11px;
+  }
+
+  .tc-cards {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+  }
+
+  .tc-card {
+    padding: 0.625rem 0.5rem;
+  }
+
+  .tc-label {
+    font-size: 12px;
+  }
+
+  .tc-detail {
+    font-size: 10px;
+  }
+
+  .find-match-btn {
+    padding: 0.75rem;
+    font-size: 13px;
+  }
+
+  .connection-bar {
+    bottom: 70px;
+    right: 0.5rem;
+    font-size: 10px;
+    padding: 0.25rem 0.6rem;
+  }
+
+  .toast-error {
+    bottom: 5rem;
+    font-size: 11px;
+    padding: 0.5rem 1rem;
+  }
+}
+
+@media (max-width: 400px) {
+  .tc-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .board-wrapper {
+    max-height: calc(100vw - 16px);
+  }
+
+  .player-name {
+    font-size: 11px;
+  }
+
+  .clock-time {
+    font-size: 15px;
+  }
+}

@@ -381,3 +381,65 @@ input:focus {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   GLOBAL MOBILE RESPONSIVE UTILITIES
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Responsive page padding ── */
+@media (max-width: 768px) {
+  /* Reduce padding on all inline-style pages */
+  body {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* Make tables/responsive cards scrollable on mobile */
+  .responsive-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Smaller headings on mobile */
+  h1 {
+    font-size: clamp(20px, 5vw, 28px) !important;
+  }
+
+  /* Fix double-tap zoom on inputs */
+  input, select, textarea, button {
+    font-size: 16px !important; /* prevent iOS zoom on focus */
+  }
+}
+
+@media (max-width: 400px) {
+  h1 {
+    font-size: 18px !important;
+  }
+}
+
+/* ── Utility: hide on mobile ── */
+@media (max-width: 768px) {
+  .hide-mobile {
+    display: none !important;
+  }
+}
+
+/* ── Utility: full width on mobile ── */
+@media (max-width: 768px) {
+  .mobile-full-width {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* Tournament grid — force 1 col on mobile */
+  [style*="minmax(340px"],
+  [style*="minmax(320px"],
+  [style*="minmax(300px"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Reduce page-level padding on mobile */
+  .content-scroll > div:first-child {
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+}
