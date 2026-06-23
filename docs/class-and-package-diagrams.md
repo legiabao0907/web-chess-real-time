@@ -1,7 +1,7 @@
 # Class Diagram & Package/Subsystem Diagram — Hệ Thống Cờ Vua Trực Tuyến
 
 > Tài liệu này bổ sung Class Diagram và Package/Subsystem Diagram dựa trên các [Sequence Diagram](sequence-diagrams.md) đã có.  
-> **Đã cập nhật (18/06/2026)**: Bổ sung đầy đủ interface/DTO còn thiếu: VerboseMove, JoinGameDto, MakeMoveDto, CreateGameDto, StartBotGameDto, LoginDto, RegisterDto, UpdateProfileDto, JoinRoomDto, SendDmDto, GetHistoryDto, SendDirectMessageDto, DirectMessagePayload, LeaderboardUpdate, LeaderboardCategory, RankResult, SwissPastMatch, SwissRoundResult, CreateTournamentDto, LiveGameSummary. Thêm WatchStore, FriendStore, ProfileStore, ApiFetch, AuthLib vào Frontend diagram. Sửa tên Message→ChatMessage, cập nhật UserController routes, TournamentController routes. Cập nhật GameState đầy đủ fields (whiteUsername, blackUsername, winner, verboseMoves, isBot…).  
+> **Đã cập nhật (23/06/2026)**: Bổ sung Section 1.3 — Drizzle ORM Layer: `DrizzleModule`, `DrizzleDB` type, Schema Table Definitions (`PgTable` objects), `$inferSelect`/`$inferInsert` inferred types, `relations()`, và `SchemaBundle`. Giải thích cơ chế type phát sinh tự động từ `pgTable()` và cách Service kết nối qua `@Inject(DRIZZLE)`.  
 > Dùng [Mermaid Live Editor](https://mermaid.live/) hoặc Markdown Preview trên IDE để xem trực quan.
 
 ---
@@ -11,6 +11,7 @@
 1. [Backend Class Diagram — Tổng quan](#1-backend-class-diagram--tổng-quan)
    - [1.1 Toàn bộ class backend (với Multiplicity)](#11-toàn-bộ-class-backend-với-multiplicity)
    - [1.2 Database Entities — Quan hệ ERD (với Multiplicity)](#12-database-entities--quan-hệ-erd-với-multiplicity)
+   - [1.3 Drizzle ORM Layer — Schema Definitions & Phát Sinh](#13-drizzle-orm-layer--schema-definitions--phát-sinh-derived-types)
 2. [Module Game — Chi tiết](#2-module-game--chi-tiết)
 3. [Module Tournament — Chi tiết](#3-module-tournament--chi-tiết)
 4. [Module Chat — Chi tiết](#4-module-chat--chi-tiết)
@@ -462,6 +463,276 @@ erDiagram
 | Tournament | ← có → | Participant | 1 : 2..* | Một giải có ít nhất 2 người |
 | ChatRoom | ← có → | Message | 1 : 0..* | Một room có nhiều tin nhắn |
 | ChatRoom | ← có → | Member | 1 : 2 | Một room có đúng 2 thành viên (DM) |
+
+---
+
+### 1.3 Drizzle ORM Layer — Schema Definitions & Phát Sinh (Derived Types)
+
+> 🔑 **Giải thích**: Khi định nghĩa schema bằng `pgTable()`, Drizzle ORM **tự động sinh** (infer) ra các TypeScript type từ chính schema đó. Các Service không import trực tiếp type mà dùng `NodePgDatabase<typeof schema>` — toàn bộ type được Drizzle nội suy từ cấu trúc bảng. Sơ đồ này thể hiện **class/type phát sinh** ở tầng code (không phải tầng DB).
+
+```mermaid
+classDiagram
+    direction TB
+
+    %% ═══════════════════════════════════════════════════════
+    %% DRIZZLE MODULE (NestJS Provider)
+    %% ═══════════════════════════════════════════════════════
+    class DrizzleModule {
+        <<NestJS Dynamic Module>>
+        +Symbol DRIZZLE
+        +useFactory(config) DrizzleDB
+    }
+
+    %% ═══════════════════════════════════════════════════════
+    %% DRIZZLE DATABASE TYPE (phát sinh từ schema)
+    %% ═══════════════════════════════════════════════════════
+    class DrizzleDB {
+        <<Type Alias: NodePgDatabase~typeof schema~>>
+        +query: PostgresJsDatabase
+        +select: Function
+        +insert: Function
+        +update: Function
+        +delete: Function
+        +execute: Function
+    }
+
+    %% ═══════════════════════════════════════════════════════
+    %% SCHEMA TABLE DEFINITIONS (PgTable objects)
+    %% ═══════════════════════════════════════════════════════
+    class usersTable {
+        <<PgTable~"users"~>>
+        +PgColumn id: uuid PK
+        +PgColumn username: varchar UK
+        +PgColumn email: varchar UK
+        +PgColumn passwordHash: text
+        +PgColumn blitzRating: integer
+        +PgColumn rapidRating: integer
+        +PgColumn bulletRating: integer
+        +PgColumn role: varchar
+        +PgColumn createdAt: timestamp
+    }
+
+    class gamesTable {
+        <<PgTable~"games"~>>
+        +PgColumn id: uuid PK
+        +PgColumn whiteId: uuid FK
+        +PgColumn blackId: uuid FK
+        +PgColumn whiteUsername: varchar
+        +PgColumn blackUsername: varchar
+        +PgColumn winnerId: uuid FK
+        +PgColumn status: varchar
+        +PgColumn timeControl: varchar
+        +PgColumn pgn: text
+        +PgColumn finalFen: text
+        +PgColumn moves: jsonb
+        +PgColumn tournamentId: uuid FK
+        +PgColumn createdAt: timestamp
+    }
+
+    class tournamentsTable {
+        <<PgTable~"tournaments"~>>
+        +PgColumn id: uuid PK
+        +PgColumn name: varchar
+        +PgColumn format: varchar
+        +PgColumn status: varchar
+        +PgColumn timeControl: varchar
+        +PgColumn startTime: timestamp
+        +PgColumn endTime: timestamp
+        +PgColumn creatorId: uuid FK
+    }
+
+    class tournamentParticipantsTable {
+        <<PgTable~"tournament_participants"~>>
+        +PgColumn tournamentId: uuid PK_FK
+        +PgColumn userId: uuid PK_FK
+        +PgColumn points: real
+        +PgColumn tieBreak: real
+        +PgColumn rank: integer
+    }
+
+    class chatRoomsTable {
+        <<PgTable~"chat_rooms"~>>
+        +PgColumn id: uuid PK
+        +PgColumn type: varchar
+        +PgColumn referenceId: uuid
+        +PgColumn createdAt: timestamp
+    }
+
+    class chatRoomMembersTable {
+        <<PgTable~"chat_room_members"~>>
+        +PgColumn roomId: uuid PK_FK
+        +PgColumn userId: uuid PK_FK
+    }
+
+    class messagesTable {
+        <<PgTable~"messages"~>>
+        +PgColumn id: uuid PK
+        +PgColumn roomId: uuid FK
+        +PgColumn senderId: uuid FK
+        +PgColumn senderUsername: varchar
+        +PgColumn content: text
+        +PgColumn createdAt: timestamp
+    }
+
+    class friendsTable {
+        <<PgTable~"friends"~>>
+        +PgColumn user1Id: uuid PK_FK
+        +PgColumn user2Id: uuid PK_FK
+        +PgColumn status: varchar
+    }
+
+    class profileInfoTable {
+        <<PgTable~"profileInfo"~>>
+        +PgColumn id: serial PK
+        +PgColumn metadata: jsonb
+        +PgColumn userId: uuid FK_UK
+    }
+
+    %% ═══════════════════════════════════════════════════════
+    %% INFERRED TYPES (do Drizzle tự động sinh từ schema)
+    %% ═══════════════════════════════════════════════════════
+    class InferredTypes~T~ {
+        <<TypeScript Utility Types — Auto-generated>>
+        +$inferSelect: RowType~T~
+        +$inferInsert: InsertType~T~
+        +$inferUpdate: UpdateType~T~
+    }
+
+    %% ═══════════════════════════════════════════════════════
+    %% RELATIONS (Drizzle Relations API)
+    %% ═══════════════════════════════════════════════════════
+    class usersRelations {
+        <<relations()>>
+        +gamesAsWhite: many~games~
+        +gamesAsBlack: many~games~
+    }
+
+    class gamesRelations {
+        <<relations()>>
+        +whitePlayer: one~users~
+        +blackPlayer: one~users~
+    }
+
+    class profileInfoRelations {
+        <<relations()>>
+        +user: one~users~
+    }
+
+    %% ═══════════════════════════════════════════════════════
+    %% SCHEMA BUNDLE (import * as schema)
+    %% ═══════════════════════════════════════════════════════
+    class SchemaBundle {
+        <<import * as schema from './schema/schema'>>
+        +users: usersTable
+        +games: gamesTable
+        +tournaments: tournamentsTable
+        +tournamentParticipants: tournamentParticipantsTable
+        +chatRooms: chatRoomsTable
+        +chatRoomMembers: chatRoomMembersTable
+        +messages: messagesTable
+        +friends: friendsTable
+        +profileInfo: profileInfoTable
+        +usersRelations: usersRelations
+        +gamesRelations: gamesRelations
+        +profileInfoRelations: profileInfoRelations
+    }
+
+    %% ═══════════════════════════════════════════════════════
+    %% RELATIONSHIPS
+    %% ═══════════════════════════════════════════════════════
+
+    %% ─── DrizzleModule creates DrizzleDB via factory ───
+    DrizzleModule "1" --> "1" DrizzleDB : useFactory(pool, {schema})
+
+    %% ─── DrizzleDB được typed bởi SchemaBundle ───
+    DrizzleDB "1" --> "1" SchemaBundle : typed by ~typeof schema~
+
+    %% ─── SchemaBundle aggregates all table definitions ───
+    SchemaBundle "1" --> "1" usersTable : exports
+    SchemaBundle "1" --> "1" gamesTable : exports
+    SchemaBundle "1" --> "1" tournamentsTable : exports
+    SchemaBundle "1" --> "1" tournamentParticipantsTable : exports
+    SchemaBundle "1" --> "1" chatRoomsTable : exports
+    SchemaBundle "1" --> "1" chatRoomMembersTable : exports
+    SchemaBundle "1" --> "1" messagesTable : exports
+    SchemaBundle "1" --> "1" friendsTable : exports
+    SchemaBundle "1" --> "1" profileInfoTable : exports
+
+    %% ─── Relations link tables ───
+    usersRelations "1" --> "1" gamesTable : many(games)
+    gamesRelations "1" --> "1" usersTable : one(users)
+    profileInfoRelations "1" --> "1" usersTable : one(users)
+
+    %% ─── Each table .$inferSelect/.$inferInsert → InferredTypes ───
+    usersTable "1" ..> "1" InferredTypes~User~ : .$inferSelect
+    gamesTable "1" ..> "1" InferredTypes~Game~ : .$inferSelect
+    tournamentsTable "1" ..> "1" InferredTypes~Tournament~ : .$inferSelect
+    messagesTable "1" ..> "1" InferredTypes~ChatMessage~ : .$inferSelect
+    friendsTable "1" ..> "1" InferredTypes~Friend~ : .$inferSelect
+    profileInfoTable "1" ..> "1" InferredTypes~ProfileInfo~ : .$inferSelect
+
+    %% ─── Chú thích ───
+    note for DrizzleModule "File: backend/src/drizzle/drizzle.module.ts
+    Provider token: Symbol('drizzle-connection')
+    Auto-run migrations on startup"
+
+    note for DrizzleDB "Type: NodePgDatabase<typeof schema>
+    Inject: @Inject(DRIZZLE) private db: DrizzleDB
+    Mọi Service dùng type này để có type-safe queries"
+
+    note for SchemaBundle "File: backend/src/drizzle/schema/schema.ts
+    Re-export tất cả table + relations
+    DrizzleDB = drizzle(pool, { schema })"
+
+    note for InferredTypes~T~ "Drizzle tự động sinh từ pgTable():
+    • $inferSelect = type của 1 row khi SELECT
+    • $inferInsert = type khi INSERT (auto-generated fields optional)
+    • $inferUpdate = type khi UPDATE (all fields optional)
+    → Không cần định nghĩa thủ công!"
+
+    note for usersRelations "Dùng trong nested queries:
+    db.query.users.findMany({ with: { gamesAsWhite: true } })"
+```
+
+**Cách Service kết nối tới Drizzle:**
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Mọi Service (GameService, AuthService, ChatService, ...)    │
+│  constructor(                                                │
+│    @Inject(DRIZZLE) private db: NodePgDatabase<typeof schema>│
+│  ) {}                                                        │
+│                                                              │
+│  // Type-safe query:                                         │
+│  const users = await this.db.select()                        │
+│    .from(users)     // ← PgTable object                      │
+│    .where(eq(users.id, userId));                             │
+│  // users tự động có type: User[] (từ $inferSelect)          │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Bảng tổng hợp các type phát sinh từ Drizzle:**
+
+| Schema File | Table Object | Export | Inferred Row Type | Dùng trong Service |
+|------------|-------------|--------|-------------------|-------------------|
+| `users.schema.ts` | `users` | ✅ | `typeof users.$inferSelect` | AuthService, UserService, LeaderboardService |
+| `users.schema.ts` | `friends` | ✅ | `typeof friends.$inferSelect` | UserService |
+| `game.schema.ts` | `games` | ✅ | `typeof games.$inferSelect` | GameService, WatchService |
+| `tournament.schema.ts` | `tournaments` | ✅ | `typeof tournaments.$inferSelect` | TournamentService |
+| `tournament.schema.ts` | `tournamentParticipants` | ✅ | `typeof tournamentParticipants.$inferSelect` | TournamentService |
+| `chat.schema.ts` | `chatRooms` | ✅ | `typeof chatRooms.$inferSelect` | ChatService |
+| `chat.schema.ts` | `chatRoomMembers` | ✅ | `typeof chatRoomMembers.$inferSelect` | ChatService |
+| `chat.schema.ts` | `messages` | ✅ | `typeof messages.$inferSelect` | ChatService |
+| `profileInfo.schema.ts` | `profileInfo` | ✅ | `typeof profileInfo.$inferSelect` | UserService |
+| `schema.ts` | `usersRelations` | ✅ | (relation definition) | (nested queries) |
+| `schema.ts` | `gamesRelations` | ✅ | (relation definition) | (nested queries) |
+| `schema.ts` | `profileInfoRelations` | ✅ | (relation definition) | (nested queries) |
+| `types/drizzle.d.ts` | `DrizzleDB` | ✅ | `NodePgDatabase<typeof schema>` | **TẤT CẢ Service** |
+
+> 💡 **Điểm khác biệt giữa ERD (1.2) và Drizzle ORM Layer (1.3)**:
+> - **ERD (1.2)** thể hiện quan hệ giữa các **bảng database** (tầng vật lý — PostgreSQL).
+> - **Drizzle ORM Layer (1.3)** thể hiện các **object/type trong code TypeScript** (tầng logic — `pgTable`, `NodePgDatabase`, `$inferSelect`).
+> - `pgTable` object chính là "class phát sinh" — nó vừa là schema definition, vừa tự động sinh ra TypeScript type cho row, insert, update.
 
 ---
 
