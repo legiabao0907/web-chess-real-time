@@ -643,7 +643,7 @@ classDiagram
     %% ═══════════════════════════════════════════════════════
 
     %% ─── DrizzleModule creates DrizzleDB via factory ───
-    DrizzleModule "1" --> "1" DrizzleDB : useFactory(pool, {schema})
+    DrizzleModule "1" --> "1" DrizzleDB : useFactory(pool, &#123;schema&#125;)
 
     %% ─── DrizzleDB được typed bởi SchemaBundle ───
     DrizzleDB "1" --> "1" SchemaBundle : typed by ~typeof schema~
@@ -1662,7 +1662,7 @@ classDiagram
 
     %% ─── Drizzle ORM: Service → DrizzleDB → PgTable ───
     LeaderboardService "1" --> "1" DrizzleDB : @Inject(DRIZZLE)
-    DrizzleDB "1" --> "1" usersTable : .update(users).set({blitzRating: newElo})
+    DrizzleDB "1" --> "1" usersTable : .update(users).set(&#123;blitzRating: newElo&#125;)
 
     note for LeaderboardGateway "namespace: /leaderboard — Subscribe category, flash animation rows"
     note for LeaderboardService "Redis ZSET O(log N) rank query, persist ELO PostgreSQL qua Drizzle"
@@ -2250,7 +2250,7 @@ classDiagram
         +inject: [ConfigService]
         +1. new Pool(connectionString, ssl?)
         +2. Auto-run migrations (0000_fearless_betty_brant.sql)
-        +3. drizzle(pool, {schema})
+        +3. drizzle(pool, &#123;schema&#125;)
         +4. return NodePgDatabase~typeof schema~
     }
 
@@ -2262,8 +2262,7 @@ classDiagram
         +delete(table) PgDelete
         +execute(sql) PgExecute
         +query: PostgresJsDatabase
-        --injected as--
-        @Inject(DRIZZLE) private db: DrizzleDB
+        -db: @Inject(DRIZZLE)
     }
 
     class SchemaBundle {
@@ -2342,7 +2341,7 @@ classDiagram
         +jsonb moves
         +uuid tournamentId FK → tournaments.id
         +timestamp createdAt DEFAULT now()
-        --23 indexes including--
+        %% 23 indexes:
         idx_games_white_id
         idx_games_black_id
         idx_games_winner_id
@@ -2368,7 +2367,7 @@ classDiagram
         +timestamp startTime
         +timestamp endTime
         +uuid creatorId FK → users.id
-        --indexes--
+        %% indexes:
         idx_tournaments_status
         idx_tournaments_creator_id
         idx_tournaments_start_time
@@ -2384,9 +2383,9 @@ classDiagram
         +real points DEFAULT 0
         +real tieBreak DEFAULT 0
         +integer rank
-        --indexes--
+        %% indexes:
         idx_tournament_participants_user_id
-        --composite PK (tournamentId, userId)--
+        %% composite PK (tournamentId, userId)
     }
 
     %% ───────────────────────────────────────────────────────
@@ -2398,7 +2397,7 @@ classDiagram
         +varchar(50) type
         +uuid referenceId
         +timestamp createdAt DEFAULT now()
-        --indexes--
+        %% indexes:
         idx_chat_rooms_reference_id
         idx_chat_rooms_type_ref (composite: type, referenceId)
     }
@@ -2410,9 +2409,9 @@ classDiagram
         <<PgTable~"chat_room_members"~ — chat.schema.ts>>
         +uuid roomId PK_FK → chat_rooms.id
         +uuid userId PK_FK → users.id
-        --indexes--
+        %% indexes:
         idx_chat_room_members_user_id
-        --composite PK (roomId, userId)--
+        %% composite PK (roomId, userId)
     }
 
     %% ───────────────────────────────────────────────────────
@@ -2426,7 +2425,7 @@ classDiagram
         +varchar(255) senderUsername NOT NULL
         +text content NOT NULL
         +timestamp createdAt DEFAULT now()
-        --indexes--
+        %% indexes:
         idx_messages_room_id
         idx_messages_sender_id
         idx_messages_created_at
@@ -2441,9 +2440,9 @@ classDiagram
         +uuid user1Id PK_FK → users.id
         +uuid user2Id PK_FK → users.id
         +varchar(50) status
-        --indexes--
+        %% indexes:
         idx_friends_user_id_2
-        --composite PK (user1Id, user2Id)--
+        %% composite PK (user1Id, user2Id)
     }
 
     %% ───────────────────────────────────────────────────────
@@ -2454,7 +2453,7 @@ classDiagram
         +serial id PK AUTO_INCREMENT
         +jsonb metadata
         +uuid userId FK_UK → users.id NOT NULL
-        --indexes--
+        %% indexes:
         idx_profileinfo_user_id (UNIQUE)
     }
 
@@ -2490,40 +2489,37 @@ classDiagram
 
     class usersRelations {
         <<relations(users, ...)>>
-        +gamesAsWhite: many~games~ {relationName: 'white'}
-        +gamesAsBlack: many~games~ {relationName: 'black'}
-        --usage--
-        db.query.users.findMany({
-            with: { gamesAsWhite: true, gamesAsBlack: true }
-        })
+        +gamesAsWhite: many~games~ relationName=white
+        +gamesAsBlack: many~games~ relationName=black
     }
 
     class gamesRelations {
         <<relations(games, ...)>>
-        +whitePlayer: one~users~ {relationName: 'white'}
-        +blackPlayer: one~users~ {relationName: 'black'}
-        --usage--
-        db.query.games.findMany({
-            with: { whitePlayer: true, blackPlayer: true }
-        })
+        +whitePlayer: one~users~ relationName=white
+        +blackPlayer: one~users~ relationName=black
     }
 
     class profileInfoRelations {
         <<relations(profileInfo, ...)>>
         +user: one~users~
-        --usage--
-        db.query.profileInfo.findMany({
-            with: { user: true }
-        })
     }
 
     usersRelations "1" --> "1" games : many(games)
     gamesRelations "1" --> "1" users : one(users)
     profileInfoRelations "1" --> "1" users : one(users)
 
-    note for usersRelations "File: schema.ts — export const usersRelations"
-    note for gamesRelations "File: schema.ts — FK mapping: fields:[whiteId], references:[id]"
-    note for profileInfoRelations "File: profileInfo.schema.ts — FK mapping: fields:[userId], references:[id]"
+    note for usersRelations "File: schema.ts — export const usersRelations
+    Usage: db.query.users.findMany({
+      with: { gamesAsWhite: true, gamesAsBlack: true }
+    })"
+    note for gamesRelations "File: schema.ts — FK mapping: fields:[whiteId], references:[id]
+    Usage: db.query.games.findMany({
+      with: { whitePlayer: true, blackPlayer: true }
+    })"
+    note for profileInfoRelations "File: profileInfo.schema.ts — FK mapping: fields:[userId], references:[id]
+    Usage: db.query.profileInfo.findMany({
+      with: { user: true }
+    })"
 ```
 
 ### 10.4 Inferred Types — TypeScript Type Tự Động Sinh
