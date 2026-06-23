@@ -1,7 +1,7 @@
 # Class Diagram & Package/Subsystem Diagram — Hệ Thống Cờ Vua Trực Tuyến
 
 > Tài liệu này bổ sung Class Diagram và Package/Subsystem Diagram dựa trên các [Sequence Diagram](sequence-diagrams.md) đã có.  
-> **Đã cập nhật (23/06/2026)**: Bổ sung Section 1.3 — Drizzle ORM Layer: `DrizzleModule`, `DrizzleDB` type, Schema Table Definitions (`PgTable` objects), `$inferSelect`/`$inferInsert` inferred types, `relations()`, và `SchemaBundle`. Giải thích cơ chế type phát sinh tự động từ `pgTable()` và cách Service kết nối qua `@Inject(DRIZZLE)`.  
+> **Đã cập nhật (23/06/2026)**: Bổ sung Section 10 — Drizzle Module Class Diagram Chi Tiết: đầy đủ 9 PgTable, 3 relations, 23 indexes, DrizzleModule factory pattern, DRIZZLE token, SchemaBundle, inferred types `$inferSelect`/`$inferInsert`/`$inferUpdate`, và service-to-table mapping. Section 1.3 giữ lại làm overview ngắn gọn.  
 > Dùng [Mermaid Live Editor](https://mermaid.live/) hoặc Markdown Preview trên IDE để xem trực quan.
 
 ---
@@ -20,6 +20,7 @@
 7. [Frontend Class Diagram](#7-frontend-class-diagram)
 8. [Package/Subsystem Diagram](#8-packagesubsystem-diagram)
 9. [Mối liên hệ với Sequence Diagram](#9-mối-liên-hệ-với-sequence-diagram)
+10. [Drizzle Module — Class Diagram Chi Tiết](#10-drizzle-module--class-diagram-chi-tiết)
 
 ---
 
@@ -2209,6 +2210,467 @@ graph LR
 | **ProfileStore** | Frontend | Zustand: user profile, public profile viewing |
 | **apiFetch** | Frontend | Lib: REST API helper với auto Bearer token |
 | **auth.ts types** | Frontend | Lib: AuthUser, AuthTokens, AuthResponse, RegisterPayload, LoginPayload |
+
+---
+
+## 10. Drizzle Module — Class Diagram Chi Tiết
+
+> 🔑 **Đây là class diagram ĐẦY ĐỦ nhất cho Drizzle ORM Module** — thể hiện toàn bộ kiến trúc tầng persistence: NestJS Module → Provider Factory → Database Type → PgTable Definitions → Indexes → Inferred Types → Relations → Service Mapping.
+
+### 10.1 Tổng quan Drizzle Module
+
+```mermaid
+classDiagram
+    direction TB
+
+    %% ═══════════════════════════════════════════════════════
+    %% 1. NESTJS MODULE — DrizzleModule
+    %% ═══════════════════════════════════════════════════════
+    class DrizzleModule {
+        <<NestJS @Module>>
+        +providers: [DRIZZLE provider]
+        +exports: [DRIZZLE]
+    }
+
+    class DRIZZLE_Token {
+        <<Symbol('drizzle-connection')>>
+        +description: "Injection token cho DrizzleDB"
+        +used_by: "TẤT CẢ Service"
+    }
+
+    class Pool {
+        <<pg.Pool — node-postgres>>
+        +connectionString: DATABASE_URL
+        +ssl: boolean | object
+        +query(sql) Promise~Result~
+    }
+
+    class drizzleFactory {
+        <<useFactory — async>>
+        +inject: [ConfigService]
+        +1. new Pool(connectionString, ssl?)
+        +2. Auto-run migrations (0000_fearless_betty_brant.sql)
+        +3. drizzle(pool, {schema})
+        +4. return NodePgDatabase~typeof schema~
+    }
+
+    class DrizzleDB {
+        <<Type: NodePgDatabase~typeof schema~>>
+        +select(fields?) PgSelect
+        +insert(table) PgInsert
+        +update(table) PgUpdate
+        +delete(table) PgDelete
+        +execute(sql) PgExecute
+        +query: PostgresJsDatabase
+        --injected as--
+        @Inject(DRIZZLE) private db: DrizzleDB
+    }
+
+    class SchemaBundle {
+        <<import * as schema from './schema/schema'>>
+        +users: PgTable~"users"~
+        +games: PgTable~"games"~
+        +tournaments: PgTable~"tournaments"~
+        +tournamentParticipants: PgTable~"tournament_participants"~
+        +chatRooms: PgTable~"chat_rooms"~
+        +chatRoomMembers: PgTable~"chat_room_members"~
+        +messages: PgTable~"messages"~
+        +friends: PgTable~"friends"~
+        +profileInfo: PgTable~"profileInfo"~
+        +usersRelations: Relations
+        +gamesRelations: Relations
+        +profileInfoRelations: Relations
+    }
+
+    DrizzleModule "1" --> "1" DRIZZLE_Token : exports
+    DrizzleModule "1" --> "1" drizzleFactory : provider
+    drizzleFactory "1" --> "1" Pool : creates
+    drizzleFactory "1" --> "1" DrizzleDB : returns
+    DrizzleDB "1" --> "1" SchemaBundle : typed by ~typeof schema~
+    DRIZZLE_Token "1" ..> "1" DrizzleDB : resolves to
+
+    note for DrizzleModule "File: backend/src/drizzle/drizzle.module.ts
+    Cung cấp DRIZZLE token cho toàn bộ app"
+    note for drizzleFactory "Auto-run migrations khi startup (idempotent)
+    Tìm file SQL trong dist/ hoặc src/
+    Split by '--> statement-breakpoint'"
+    note for DrizzleDB "NodePgDatabase<typeof schema>
+    = drizzle(pool, { schema })
+    Mọi query đều type-safe nhờ typeof schema"
+    note for SchemaBundle "File: backend/src/drizzle/schema/schema.ts
+    Re-export từ 5 schema files:
+    users, tournament, game, chat, profileInfo"
+```
+
+### 10.2 Toàn bộ 9 PgTable — Đầy đủ Column + Constraint + Index
+
+```mermaid
+classDiagram
+    direction TB
+
+    %% ───────────────────────────────────────────────────────
+    %% users
+    %% ───────────────────────────────────────────────────────
+    class users {
+        <<PgTable~"users"~ — users.schema.ts>>
+        +uuid id PK defaultRandom()
+        +varchar(255) username UK NOT NULL
+        +varchar(255) email UK NOT NULL
+        +text passwordHash NOT NULL
+        +integer blitzRating DEFAULT 1200
+        +integer rapidRating DEFAULT 1200
+        +integer bulletRating DEFAULT 1200
+        +varchar(50) role DEFAULT 'user'
+        +timestamp createdAt DEFAULT now()
+    }
+
+    %% ───────────────────────────────────────────────────────
+    %% games
+    %% ───────────────────────────────────────────────────────
+    class games {
+        <<PgTable~"games"~ — game.schema.ts>>
+        +uuid id PK defaultRandom()
+        +uuid whiteId FK → users.id
+        +uuid blackId FK → users.id
+        +varchar(255) whiteUsername
+        +varchar(255) blackUsername
+        +uuid winnerId FK → users.id
+        +varchar(50) status
+        +varchar(50) timeControl
+        +text pgn
+        +text finalFen
+        +jsonb moves
+        +uuid tournamentId FK → tournaments.id
+        +timestamp createdAt DEFAULT now()
+        --23 indexes including--
+        idx_games_white_id
+        idx_games_black_id
+        idx_games_winner_id
+        idx_games_tournament_id
+        idx_games_status
+        idx_games_created_at
+        idx_games_white_status (composite)
+        idx_games_black_status (composite)
+        idx_games_tournament_created (composite)
+        idx_games_time_control
+    }
+
+    %% ───────────────────────────────────────────────────────
+    %% tournaments
+    %% ───────────────────────────────────────────────────────
+    class tournaments {
+        <<PgTable~"tournaments"~ — tournament.schema.ts>>
+        +uuid id PK defaultRandom()
+        +varchar(255) name NOT NULL
+        +varchar(50) format
+        +varchar(50) status
+        +varchar(50) timeControl
+        +timestamp startTime
+        +timestamp endTime
+        +uuid creatorId FK → users.id
+        --indexes--
+        idx_tournaments_status
+        idx_tournaments_creator_id
+        idx_tournaments_start_time
+    }
+
+    %% ───────────────────────────────────────────────────────
+    %% tournament_participants
+    %% ───────────────────────────────────────────────────────
+    class tournament_participants {
+        <<PgTable~"tournament_participants"~ — tournament.schema.ts>>
+        +uuid tournamentId PK_FK → tournaments.id
+        +uuid userId PK_FK → users.id
+        +real points DEFAULT 0
+        +real tieBreak DEFAULT 0
+        +integer rank
+        --indexes--
+        idx_tournament_participants_user_id
+        --composite PK (tournamentId, userId)--
+    }
+
+    %% ───────────────────────────────────────────────────────
+    %% chat_rooms
+    %% ───────────────────────────────────────────────────────
+    class chat_rooms {
+        <<PgTable~"chat_rooms"~ — chat.schema.ts>>
+        +uuid id PK defaultRandom()
+        +varchar(50) type
+        +uuid referenceId
+        +timestamp createdAt DEFAULT now()
+        --indexes--
+        idx_chat_rooms_reference_id
+        idx_chat_rooms_type_ref (composite: type, referenceId)
+    }
+
+    %% ───────────────────────────────────────────────────────
+    %% chat_room_members
+    %% ───────────────────────────────────────────────────────
+    class chat_room_members {
+        <<PgTable~"chat_room_members"~ — chat.schema.ts>>
+        +uuid roomId PK_FK → chat_rooms.id
+        +uuid userId PK_FK → users.id
+        --indexes--
+        idx_chat_room_members_user_id
+        --composite PK (roomId, userId)--
+    }
+
+    %% ───────────────────────────────────────────────────────
+    %% messages
+    %% ───────────────────────────────────────────────────────
+    class messages {
+        <<PgTable~"messages"~ — chat.schema.ts>>
+        +uuid id PK defaultRandom()
+        +uuid roomId FK → chat_rooms.id
+        +uuid senderId FK → users.id
+        +varchar(255) senderUsername NOT NULL
+        +text content NOT NULL
+        +timestamp createdAt DEFAULT now()
+        --indexes--
+        idx_messages_room_id
+        idx_messages_sender_id
+        idx_messages_created_at
+        idx_messages_room_created (composite: roomId, createdAt)
+    }
+
+    %% ───────────────────────────────────────────────────────
+    %% friends
+    %% ───────────────────────────────────────────────────────
+    class friends {
+        <<PgTable~"friends"~ — users.schema.ts>>
+        +uuid user1Id PK_FK → users.id
+        +uuid user2Id PK_FK → users.id
+        +varchar(50) status
+        --indexes--
+        idx_friends_user_id_2
+        --composite PK (user1Id, user2Id)--
+    }
+
+    %% ───────────────────────────────────────────────────────
+    %% profileInfo
+    %% ───────────────────────────────────────────────────────
+    class profileInfo {
+        <<PgTable~"profileInfo"~ — profileInfo.schema.ts>>
+        +serial id PK AUTO_INCREMENT
+        +jsonb metadata
+        +uuid userId FK_UK → users.id NOT NULL
+        --indexes--
+        idx_profileinfo_user_id (UNIQUE)
+    }
+
+    %% ─── FK Relationships between PgTables ───
+    users "1" --> "0..*" games : whiteId FK
+    users "1" --> "0..*" games : blackId FK
+    users "1" --> "0..*" games : winnerId FK
+    users "1" --> "0..*" tournaments : creatorId FK
+    users "1" --> "0..*" tournament_participants : userId FK
+    users "1" --> "0..*" messages : senderId FK
+    users "1" --> "0..*" chat_room_members : userId FK
+    users "1" --> "0..*" friends : user1Id FK
+    users "1" --> "0..*" friends : user2Id FK
+    users "1" --> "1" profileInfo : userId FK UNIQUE
+
+    tournaments "1" --> "0..*" tournament_participants : tournamentId FK
+    tournaments "1" --> "0..*" games : tournamentId FK
+
+    chat_rooms "1" --> "0..*" chat_room_members : roomId FK
+    chat_rooms "1" --> "0..*" messages : roomId FK
+
+    note for users "Bảng trung tâm — 10 FK relationships từ các bảng khác"
+    note for games "Bảng nặng nhất — 10 indexes, 4 FK, JSONB moves"
+    note for friends "Self-referencing: users → users qua user1Id/user2Id"
+    note for profileInfo "1-1 với users qua UNIQUE userId"
+```
+
+### 10.3 Drizzle Relations API — Quan Hệ Nested Query
+
+```mermaid
+classDiagram
+    direction TB
+
+    class usersRelations {
+        <<relations(users, ...)>>
+        +gamesAsWhite: many~games~ {relationName: 'white'}
+        +gamesAsBlack: many~games~ {relationName: 'black'}
+        --usage--
+        db.query.users.findMany({
+            with: { gamesAsWhite: true, gamesAsBlack: true }
+        })
+    }
+
+    class gamesRelations {
+        <<relations(games, ...)>>
+        +whitePlayer: one~users~ {relationName: 'white'}
+        +blackPlayer: one~users~ {relationName: 'black'}
+        --usage--
+        db.query.games.findMany({
+            with: { whitePlayer: true, blackPlayer: true }
+        })
+    }
+
+    class profileInfoRelations {
+        <<relations(profileInfo, ...)>>
+        +user: one~users~
+        --usage--
+        db.query.profileInfo.findMany({
+            with: { user: true }
+        })
+    }
+
+    usersRelations "1" --> "1" games : many(games)
+    gamesRelations "1" --> "1" users : one(users)
+    profileInfoRelations "1" --> "1" users : one(users)
+
+    note for usersRelations "File: schema.ts — export const usersRelations"
+    note for gamesRelations "File: schema.ts — FK mapping: fields:[whiteId], references:[id]"
+    note for profileInfoRelations "File: profileInfo.schema.ts — FK mapping: fields:[userId], references:[id]"
+```
+
+### 10.4 Inferred Types — TypeScript Type Tự Động Sinh
+
+```mermaid
+classDiagram
+    direction LR
+
+    class PgTable~T~ {
+        <<pgTable() definition>>
+        +columns: PgColumn[]
+        +$inferSelect: RowType
+        +$inferInsert: InsertType
+        +$inferUpdate: UpdateType
+        +_brand: unique symbol
+    }
+
+    class RowType~User~ {
+        <<typeof users.$inferSelect>>
+        +id: string
+        +username: string
+        +email: string
+        +passwordHash: string
+        +blitzRating: number
+        +rapidRating: number
+        +bulletRating: number
+        +role: string
+        +createdAt: Date
+    }
+
+    class InsertType~User~ {
+        <<typeof users.$inferInsert>>
+        +id?: string (auto-generated)
+        +username: string
+        +email: string
+        +passwordHash: string
+        +blitzRating?: number
+        +rapidRating?: number
+        +bulletRating?: number
+        +role?: string
+        +createdAt?: Date
+    }
+
+    class UpdateType~User~ {
+        <<typeof users.$inferUpdate>>
+        +id?: string
+        +username?: string
+        +email?: string
+        +passwordHash?: string
+        +blitzRating?: number
+        +rapidRating?: number
+        +bulletRating?: number
+        +role?: string
+        +createdAt?: Date
+    }
+
+    PgTable~T~ "1" --> "1" RowType~User~ : .$inferSelect
+    PgTable~T~ "1" --> "1" InsertType~User~ : .$inferInsert
+    PgTable~T~ "1" --> "1" UpdateType~User~ : .$inferUpdate
+
+    note for PgTable~T~ "Không cần định nghĩa thủ công!
+    TypeScript tự suy luận từ cột"
+    note for RowType~User~ "Dùng cho: SELECT results
+    Tất cả cột NOT NULL → required"
+    note for InsertType~User~ "Dùng cho: INSERT values
+    defaultRandom() → optional"
+    note for UpdateType~User~ "Dùng cho: UPDATE .set()
+    Tất cả cột → optional"
+```
+
+### 10.5 Service → Table Mapping — Ai Dùng Bảng Nào?
+
+| Service | Inject Token | PgTable sử dụng | Thao tác chính |
+|---------|-------------|-----------------|---------------|
+| **AuthService** | `@Inject(DRIZZLE)` | `users` | `.insert(users)`, `.select().from(users).where(...)` |
+| **UserService** | `@Inject(DRIZZLE)` | `users`, `friends`, `profileInfo` | CRUD profile, friend request/accept/remove |
+| **GameService** | `@Inject(DRIZZLE)` | `games`, `users` | `.insert(games)`, `.select().from(games)`, ELO update |
+| **ChatService** | `@Inject(DRIZZLE)` | `chatRooms`, `chatRoomMembers`, `messages` | Create room, add members, save/load messages |
+| **TournamentService** | `@Inject(DRIZZLE)` | `tournaments`, `tournamentParticipants`, `games` | CRUD tournament, join/leave, record results |
+| **TournamentSwissService** | `@Inject(DRIZZLE)` | `tournamentParticipants`, `games`, `users` | Read standings, generate pairings |
+| **LeaderboardService** | `@Inject(DRIZZLE)` | `users` | `.update(users).set({blitzRating: newElo})` |
+| **WatchService** | *(không dùng DB)* | *(chỉ dùng Redis)* | Spectator counter + live game discovery |
+
+### 10.6 Luồng Khởi Tạo Drizzle Module
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  AppModule khởi động                                            │
+│    │                                                            │
+│    ├── ConfigModule.forRoot()  →  đọc .env                      │
+│    │    └── DATABASE_URL = postgres://user:pass@host:5432/db    │
+│    │                                                            │
+│    └── DrizzleModule (imported by all feature modules)          │
+│         │                                                       │
+│         └── useFactory(configService):                          │
+│              │                                                  │
+│              ├─ 1. const pool = new Pool({                      │
+│              │      connectionString: DATABASE_URL,              │
+│              │      ssl: localhost ? false : {rejectUnauthorized: false}│
+│              │    })                                            │
+│              │                                                  │
+│              ├─ 2. Auto-run migrations:                         │
+│              │    - Tìm file 0000_fearless_betty_brant.sql       │
+│              │    - Split by '--> statement-breakpoint'          │
+│              │    - pool.query() từng câu lệnh                   │
+│              │    - Bỏ qua lỗi "already exists" (idempotent)     │
+│              │                                                  │
+│              ├─ 3. return drizzle(pool, { schema })              │
+│              │    = NodePgDatabase<typeof schema>                │
+│              │    = DrizzleDB                                    │
+│              │                                                  │
+│              └─ 4. NestJS gán vào DRIZZLE token                 │
+│                                                                │
+│  Tất cả Service có thể inject:                                  │
+│    constructor(@Inject(DRIZZLE) private db: DrizzleDB) {}       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 10.7 Bảng Tổng Hợp Index (23 indexes)
+
+| Index Name | Table | Column(s) | Priority | Purpose |
+|-----------|-------|-----------|----------|---------|
+| `idx_games_white_id` | games | whiteId | 🔴 CRITICAL | FK — tìm game của white |
+| `idx_games_black_id` | games | blackId | 🔴 CRITICAL | FK — tìm game của black |
+| `idx_games_winner_id` | games | winnerId | 🔴 CRITICAL | FK — tìm game winner thắng |
+| `idx_games_tournament_id` | games | tournamentId | 🔴 CRITICAL | FK — tìm game trong giải |
+| `idx_messages_room_id` | messages | roomId | 🔴 CRITICAL | FK — tải lịch sử chat |
+| `idx_messages_sender_id` | messages | senderId | 🔴 CRITICAL | FK — tìm tin nhắn của user |
+| `idx_friends_user_id_2` | friends | user2Id | 🔴 CRITICAL | FK — reverse lookup bạn bè |
+| `idx_chat_room_members_user_id` | chat_room_members | userId | 🔴 CRITICAL | FK — tìm room của user |
+| `idx_tournament_participants_user_id` | tournament_participants | userId | 🔴 CRITICAL | FK — tìm giải user tham gia |
+| `idx_profileinfo_user_id` | profileInfo | userId | 🔴 CRITICAL | UK — 1-1 lookup profile |
+| `idx_games_status` | games | status | 🟠 HIGH | Filter game active/finished |
+| `idx_games_created_at` | games | createdAt | 🟠 HIGH | Sort lịch sử game |
+| `idx_messages_created_at` | messages | createdAt | 🟠 HIGH | Sort tin nhắn |
+| `idx_tournaments_status` | tournaments | status | 🟠 HIGH | Filter giải active/completed |
+| `idx_tournaments_creator_id` | tournaments | creatorId | 🟠 HIGH | Tìm giải do user tạo |
+| `idx_chat_rooms_reference_id` | chat_rooms | referenceId | 🟠 HIGH | Lookup room by friendId |
+| `idx_messages_room_created` | messages | (roomId, createdAt) | 🟡 MEDIUM | Composite — load chat history |
+| `idx_games_white_status` | games | (whiteId, status) | 🟡 MEDIUM | Composite — active games của white |
+| `idx_games_black_status` | games | (blackId, status) | 🟡 MEDIUM | Composite — active games của black |
+| `idx_games_tournament_created` | games | (tournamentId, createdAt) | 🟡 MEDIUM | Composite — tournament games |
+| `idx_chat_rooms_type_ref` | chat_rooms | (type, referenceId) | 🟡 MEDIUM | Composite — lookup room |
+| `idx_games_time_control` | games | timeControl | 🟢 LOW | Filter by time control |
+| `idx_tournaments_start_time` | tournaments | startTime | 🟢 LOW | Sort by start time |
+
+> ⚠️ **Lưu ý MySQL**: InnoDB **không tự động tạo index cho FK columns** (khác PostgreSQL). Phải tạo thủ công tất cả FK indexes (10 cái CRITICAL ở trên).
 
 ---
 
