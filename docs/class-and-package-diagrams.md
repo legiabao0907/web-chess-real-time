@@ -316,13 +316,13 @@ classDiagram
     note for TournamentGateway "namespace: /tournament — Cập nhật giải đấu + countdown timer"
     note for LeaderboardGateway "namespace: /leaderboard — Bảng xếp hạng + cập nhật ELO real-time"
     
-    note for GameService "Lua script matchmaking, quản lý game state Redis, persist PostgreSQL"
+    note for GameService "Lua script matchmaking, quản lý game state Redis, persist qua Drizzle ORM"
     note for AiService "Minimax Alpha-Beta + Quiescence Search + PST evaluation"
     note for AuthService "JWT access/refresh token + bcrypt password hashing"
     note for ChatService "Quản lý room, cache 50 msg gần nhất, TTL 1 giờ"
     note for TournamentService "Swiss pairing, quản lý vòng đấu, round state Redis"
     note for TournamentSwissService "Thuật toán Swiss: score groups, color balancing, byes"
-    note for LeaderboardService "Redis ZSET ranking O(log N), persist ELO PostgreSQL"
+    note for LeaderboardService "Redis ZSET ranking O(log N), persist ELO qua Drizzle ORM"
     note for UserService "Profile, friend request, friendship status cache"
     note for WatchService "Spectator counter Redis INCR/DECR, live game discovery SCAN"
 ```
@@ -964,6 +964,46 @@ classDiagram
         +number moveCount
     }
 
+    %% ═══════════════════════════════════════════════════════
+    %% DRIZZLE ORM LAYER (tầng persistence)
+    %% ═══════════════════════════════════════════════════════
+    class DrizzleDB {
+        <<NodePgDatabase~typeof schema~>>
+        +select()   +insert()
+        +update()   +delete()
+        +execute()
+    }
+
+    class gamesTable {
+        <<PgTable~"games"~>>
+        +uuid id PK
+        +uuid whiteId FK
+        +uuid blackId FK
+        +varchar whiteUsername
+        +varchar blackUsername
+        +uuid winnerId FK
+        +varchar status
+        +varchar timeControl
+        +text pgn
+        +text finalFen
+        +jsonb moves
+        +uuid tournamentId FK
+        +timestamp createdAt
+    }
+
+    class usersTable {
+        <<PgTable~"users"~>>
+        +uuid id PK
+        +varchar username UK
+        +varchar email UK
+        +text passwordHash
+        +integer blitzRating
+        +integer rapidRating
+        +integer bulletRating
+        +varchar role
+        +timestamp createdAt
+    }
+
     GameGateway "1" --> "1" GameService : delegates
     GameGateway "1" --> "1" AiService : botMoves
     GameGateway "1" ..> "0..1" WatchGateway : broadcast
@@ -977,10 +1017,14 @@ classDiagram
     WatchService "1" ..> "0..*" LiveGameSummary : generates
 
     GameService "1" --> "1" Redis : MATCHMAKE_LUA + state
-    GameService "1" --> "1" PostgreSQL : persist
+
+    %% ─── Drizzle ORM: Service → DrizzleDB → PgTable ───
+    GameService "1" --> "1" DrizzleDB : @Inject(DRIZZLE)
+    DrizzleDB "1" --> "1" gamesTable : .select().from(games)
+    DrizzleDB "1" --> "1" usersTable : FK joins
 
     note for GameGateway "namespace: /chess — Matchmaking, nước đi, đầu hàng, hòa, bot game"
-    note for GameService "Lua script atomic matchmaking ZSET, game state Redis, persist DB"
+    note for GameService "Lua script atomic matchmaking ZSET, game state Redis, persist qua Drizzle ORM"
     note for AiService "Minimax Alpha-Beta + Quiescence Search + PST + Mobility evaluation"
     note for WatchGateway "namespace: /watch — Spectator mode: buffer updates, replay on join"
     note for LeaderboardGateway "namespace: /leaderboard — Real-time ELO + flash animation"
@@ -994,6 +1038,9 @@ classDiagram
     note for CreateGameDto "DTO: Tạo game mới (userId, timeControl, side)"
     note for StartBotGameDto "DTO: Bắt đầu game với bot (difficulty, side, timeControl)"
     note for LiveGameSummary "DTO: Tổng hợp game đang live cho WatchService.listActiveGames()"
+    note for DrizzleDB "Type: NodePgDatabase<typeof schema> — inject qua @Inject(DRIZZLE)"
+    note for gamesTable "File: drizzle/schema/game.schema.ts — 23 indexes, 4 FK"
+    note for usersTable "File: drizzle/schema/users.schema.ts — FK target cho whiteId, blackId, winnerId"
 ```
 
 ---
@@ -1128,6 +1175,37 @@ classDiagram
         +number maxPlayers
     }
 
+    %% ═══════════════════════════════════════════════════════
+    %% DRIZZLE ORM LAYER
+    %% ═══════════════════════════════════════════════════════
+    class DrizzleDB {
+        <<NodePgDatabase~typeof schema~>>
+        +select()   +insert()
+        +update()   +delete()
+        +execute()
+    }
+
+    class tournamentsTable {
+        <<PgTable~"tournaments"~>>
+        +uuid id PK
+        +varchar name
+        +varchar format
+        +varchar status
+        +varchar timeControl
+        +timestamp startTime
+        +timestamp endTime
+        +uuid creatorId FK
+    }
+
+    class tournamentParticipantsTable {
+        <<PgTable~"tournament_participants"~>>
+        +uuid tournamentId PK_FK
+        +uuid userId PK_FK
+        +real points
+        +real tieBreak
+        +integer rank
+    }
+
     TournamentGateway "1" --> "1" TournamentService : delegates
     TournamentService "1" --> "1" TournamentSwissService : pairing
     TournamentService "1" --> "1" GameService : createGames
@@ -1141,10 +1219,15 @@ classDiagram
     TournamentSwissService "1" ..> "1" SwissRoundResult : produces
 
     TournamentGateway "1" --> "1" Redis : roundData
-    TournamentService "1" --> "1" PostgreSQL : CRUD
+
+    %% ─── Drizzle ORM: Service → DrizzleDB → PgTable ───
+    TournamentService "1" --> "1" DrizzleDB : @Inject(DRIZZLE)
+    TournamentSwissService "1" --> "1" DrizzleDB : @Inject(DRIZZLE)
+    DrizzleDB "1" --> "1" tournamentsTable : .select().from(tournaments)
+    DrizzleDB "1" --> "1" tournamentParticipantsTable : join & upsert
 
     note for TournamentGateway "namespace: /tournament — Real-time update + countdown timer, tournament_identify, tournament_connected"
-    note for TournamentService "Swiss pairings, round state Redis (TTL 7 ngày), game creation"
+    note for TournamentService "Swiss pairings, round state Redis (TTL 7 ngày), game creation, persist qua Drizzle"
     note for TournamentSwissService "Score groups, color balancing, floater management, byes"
     note for TournamentController "REST API: CRUD tournament, join/leave, start/next/finish, my tournaments, rounds"
     note for TournamentRound "Redis-stored round data với array TournamentGame"
@@ -1154,6 +1237,9 @@ classDiagram
     note for SwissPastMatch "Lịch sử cặp đấu đã diễn ra (whiteId, blackId, result)"
     note for SwissRoundResult "Output của generateNextRoundPairs (tournamentId, round, pairings[])"
     note for CreateTournamentDto "DTO tạo giải đấu (name, format, timeControl, startTime, maxPlayers)"
+    note for DrizzleDB "Type: NodePgDatabase<typeof schema> — inject qua @Inject(DRIZZLE)"
+    note for tournamentsTable "File: drizzle/schema/tournament.schema.ts"
+    note for tournamentParticipantsTable "File: drizzle/schema/tournament.schema.ts — composite PK (tournamentId, userId)"
 ```
 
 ---
@@ -1248,15 +1334,54 @@ classDiagram
         +number createdAt
     }
 
+    %% ═══════════════════════════════════════════════════════
+    %% DRIZZLE ORM LAYER
+    %% ═══════════════════════════════════════════════════════
+    class DrizzleDB {
+        <<NodePgDatabase~typeof schema~>>
+        +select()   +insert()
+        +update()   +delete()
+        +execute()
+    }
+
+    class chatRoomsTable {
+        <<PgTable~"chat_rooms"~>>
+        +uuid id PK
+        +varchar type
+        +uuid referenceId
+        +timestamp createdAt
+    }
+
+    class chatRoomMembersTable {
+        <<PgTable~"chat_room_members"~>>
+        +uuid roomId PK_FK
+        +uuid userId PK_FK
+    }
+
+    class messagesTable {
+        <<PgTable~"messages"~>>
+        +uuid id PK
+        +uuid roomId FK
+        +uuid senderId FK
+        +varchar senderUsername
+        +text content
+        +timestamp createdAt
+    }
+
     ChatGateway "1" --> "1" ChatService : delegates
     ChatGateway "1" --> "1" Redis : online_users Hash
     ChatService "1" --> "0..*" ChatRoom : manages
     ChatService "1" --> "0..*" ChatMessage : persists
-    ChatService "1" --> "1" PostgreSQL : chat_rooms + messages
     ChatGateway "1" --> "1" Redis : message cache List
 
+    %% ─── Drizzle ORM: Service → DrizzleDB → PgTable ───
+    ChatService "1" --> "1" DrizzleDB : @Inject(DRIZZLE)
+    DrizzleDB "1" --> "1" chatRoomsTable : .select().from(chatRooms)
+    DrizzleDB "1" --> "1" chatRoomMembersTable : join lookup
+    DrizzleDB "1" --> "1" messagesTable : .insert(messages) & .select()
+
     note for ChatGateway "namespace: /chat — Room-based DM + Redis direct routing, multi-tab, emitToUser"
-    note for ChatService "Room CRUD, Redis cache 50 msg (LRU), TTL 1 giờ, persist DB"
+    note for ChatService "Room CRUD, Redis cache 50 msg (LRU), TTL 1 giờ, persist qua Drizzle"
     note for ChatRoom "Room type: private (DM) | game | tournament — friendId, unreadCount"
     note for ChatMessage "Tin nhắn: id, roomId, senderId, content, createdAt (timestamp ms)"
     note for JoinRoomDto "DTO: join_dm event (userId, username, friendId, friendUsername)"
@@ -1264,6 +1389,10 @@ classDiagram
     note for GetHistoryDto "DTO: get_dm_history event (roomId, limit)"
     note for SendDirectMessageDto "DTO: send_direct_message event (toUserId, message) — Redis routing"
     note for DirectMessagePayload "DTO: receive_direct_message payload — gửi cho cả sender + receiver"
+    note for DrizzleDB "Type: NodePgDatabase<typeof schema> — inject qua @Inject(DRIZZLE)"
+    note for chatRoomsTable "File: drizzle/schema/chat.schema.ts"
+    note for chatRoomMembersTable "File: drizzle/schema/chat.schema.ts — composite PK (roomId, userId)"
+    note for messagesTable "File: drizzle/schema/chat.schema.ts — FK roomId + senderId, composite index (roomId, createdAt)"
 ```
 
 ---
@@ -1351,6 +1480,43 @@ classDiagram
         +string refreshToken
     }
 
+    %% ═══════════════════════════════════════════════════════
+    %% DRIZZLE ORM LAYER
+    %% ═══════════════════════════════════════════════════════
+    class DrizzleDB {
+        <<NodePgDatabase~typeof schema~>>
+        +select()   +insert()
+        +update()   +delete()
+        +execute()
+    }
+
+    class usersTable {
+        <<PgTable~"users"~>>
+        +uuid id PK
+        +varchar username UK
+        +varchar email UK
+        +text passwordHash
+        +integer blitzRating
+        +integer rapidRating
+        +integer bulletRating
+        +varchar role
+        +timestamp createdAt
+    }
+
+    class friendsTable {
+        <<PgTable~"friends"~>>
+        +uuid user1Id PK_FK
+        +uuid user2Id PK_FK
+        +varchar status
+    }
+
+    class profileInfoTable {
+        <<PgTable~"profileInfo"~>>
+        +serial id PK
+        +jsonb metadata
+        +uuid userId FK_UK
+    }
+
     AuthController "1" --> "1" AuthService : delegates
     AuthController "1" ..> "1" LoginDto : consumes
     AuthController "1" ..> "1" RegisterDto : consumes
@@ -1359,23 +1525,31 @@ classDiagram
 
     AuthService "1" --> "1" User : manages
     AuthService "1" --> "1" AuthTokens : generates
-    AuthService "1" --> "1" PostgreSQL : users table
     AuthService "1" --> "1" Redis : token store
-
-    UserService "1" --> "1" PostgreSQL : users + profile_info + friends
 
     JwtAuthGuard "1" --> "1" AuthService : validate
 
+    %% ─── Drizzle ORM: Service → DrizzleDB → PgTable ───
+    AuthService "1" --> "1" DrizzleDB : @Inject(DRIZZLE)
+    UserService "1" --> "1" DrizzleDB : @Inject(DRIZZLE)
+    DrizzleDB "1" --> "1" usersTable : .select().from(users) & .insert(users)
+    DrizzleDB "1" --> "1" friendsTable : friend CRUD
+    DrizzleDB "1" --> "1" profileInfoTable : profile metadata
+
     note for AuthController "REST: POST /auth/register, /login, /refresh"
-    note for AuthService "JWT access (15m) + refresh (7d), bcrypt hash, token Redis store"
+    note for AuthService "JWT access (15m) + refresh (7d), bcrypt hash, token Redis store, persist user qua Drizzle"
     note for LoginDto "DTO: identifier (email/username) + password"
     note for RegisterDto "DTO: username + email + password"
     note for UserController "REST: GET/PATCH /user/me, friends CRUD, public profile, friendship check"
-    note for UserService "Profile CRUD, friend request (auto-accept nếu mutual), friendship cache"
+    note for UserService "Profile CRUD, friend request (auto-accept nếu mutual), friendship cache, persist qua Drizzle"
     note for UpdateProfileDto "DTO: username?, bio?, country?, avatarUrl? (class-validator)"
     note for JwtAuthGuard "CanActivate: Bearer token extract + verify, attach user to request"
-    note for User "DB Entity: users table (Drizzle ORM)"
+    note for User "DB Entity: users table (Drizzle ORM) — $inferSelect từ pgTable"
     note for AuthTokens "DTO: accessToken + refreshToken"
+    note for DrizzleDB "Type: NodePgDatabase<typeof schema> — inject qua @Inject(DRIZZLE)"
+    note for usersTable "File: drizzle/schema/users.schema.ts — UK username, UK email"
+    note for friendsTable "File: drizzle/schema/users.schema.ts — composite PK (user1Id, user2Id)"
+    note for profileInfoTable "File: drizzle/schema/profileInfo.schema.ts — 1-1 với users, metadata JSONB"
 ```
 
 ---
@@ -1456,21 +1630,48 @@ classDiagram
         +LeaderboardEntry player
     }
 
+    %% ═══════════════════════════════════════════════════════
+    %% DRIZZLE ORM LAYER
+    %% ═══════════════════════════════════════════════════════
+    class DrizzleDB {
+        <<NodePgDatabase~typeof schema~>>
+        +select()   +insert()
+        +update()   +delete()
+        +execute()
+    }
+
+    class usersTable {
+        <<PgTable~"users"~>>
+        +uuid id PK
+        +varchar username UK
+        +varchar email UK
+        +integer blitzRating
+        +integer rapidRating
+        +integer bulletRating
+        +varchar role
+        +timestamp createdAt
+    }
+
     LeaderboardGateway "1" --> "1" LeaderboardService : delegates
     LeaderboardService "1" ..> "0..*" LeaderboardEntry : produces
     LeaderboardService "1" ..> "1" LeaderboardUpdate : returns
     LeaderboardService "1" ..> "1" UpdateEloDto : consumes
     LeaderboardService "1" ..> "1" RankResult : returns
-    LeaderboardService "1" --> "1" Redis : SortedSet~+ Hash
-    LeaderboardService "1" --> "1" PostgreSQL : persist ELO
+    LeaderboardService "1" --> "1" Redis : SortedSet + Hash
+
+    %% ─── Drizzle ORM: Service → DrizzleDB → PgTable ───
+    LeaderboardService "1" --> "1" DrizzleDB : @Inject(DRIZZLE)
+    DrizzleDB "1" --> "1" usersTable : .update(users).set({blitzRating: newElo})
 
     note for LeaderboardGateway "namespace: /leaderboard — Subscribe category, flash animation rows"
-    note for LeaderboardService "Redis ZSET O(log N) rank query, persist ELO + stats PostgreSQL"
+    note for LeaderboardService "Redis ZSET O(log N) rank query, persist ELO PostgreSQL qua Drizzle"
     note for LeaderboardEntry "DTO: rank, elo, wins/losses/draws, winRate, trend, eloChange"
     note for LeaderboardUpdate "DTO response: category, entries[], updatedAt, totalPlayers"
     note for UpdateEloDto "DTO input: userId, category, newElo, eloDelta, wins, losses, draws"
     note for LeaderboardCategory "Union type: 'blitz' | 'bullet' | 'rapid'"
     note for RankResult "DTO: rank + totalPlayers + player data cho getPlayerRank()"
+    note for DrizzleDB "Type: NodePgDatabase<typeof schema> — inject qua @Inject(DRIZZLE)"
+    note for usersTable "File: drizzle/schema/users.schema.ts — ELO columns: blitzRating, rapidRating, bulletRating"
 ```
 
 ---
